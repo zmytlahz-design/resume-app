@@ -1,0 +1,63 @@
+# docker-compose 文件格式版本（新版 Docker Compose 已不需要 version 字段）
+
+services:
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # Redis 缓存服务
+  # ⭐ 面试考点：用 Redis 代替内存字典
+  #    - 内存字典：进程重启即丢失，无法多副本共享
+  #    - Redis：持久化，TTL 自动过期，水平扩展友好
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  redis:
+    image: redis:7-alpine        # 轻量镜像，~30MB
+    container_name: resume-redis
+    restart: unless-stopped
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # 后端服务
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  backend:
+    # ① build: 指定用哪个目录下的 Dockerfile 来构建镜像
+    build: ./backend
+
+    # ② container_name: 容器名称，方便 docker ps / docker logs 查看
+    container_name: resume-backend
+
+    # ③ ports: 宿主机端口:容器端口
+    #    把宿主机 8011 映射到容器内 8011
+    #    主要用于本地直接调试 API（nginx 内部访问不经过这里）
+    ports:
+      - "8011:8011"
+
+    # ④ env_file: 从文件加载环境变量注入容器
+    #    .env 里有 DEEPSEEK_API_KEY 等敏感信息，不写进 Dockerfile
+    #    .env 文件加进 .gitignore，不上传到 Git
+    env_file:
+      - ./backend/.env
+
+    # ⑤ depends_on: 确保 Redis 先于 Backend 启动
+    depends_on:
+      - redis
+
+    # ⑥ restart: unless-stopped
+    #    容器崩溃自动重启，除非用户手动 docker stop
+    restart: unless-stopped
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # 前端服务（nginx）
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  frontend:
+    build: ./frontend
+    container_name: resume-frontend
+
+    ports:
+      # ⑥ 浏览器访问 http://localhost 就到这里
+      - "80:80"
+
+    # ⑦ depends_on: 声明依赖关系
+    #    确保 backend 容器先启动，再启动 frontend
+    #    注意：这只保证顺序，不保证 backend 完全 ready（生产可加 healthcheck）
+    depends_on:
+      - backend
+
+    restart: unless-stopped

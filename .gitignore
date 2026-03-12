@@ -1,0 +1,43 @@
+# 环境变量（含 API Key，禁止提交）
+.env
+backend/.env
+
+# Docker 镜像 tar 文件（体积大，不需要提交）
+*.tar
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 编辑器
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+*.log
+logs/
+
+# Docker
+.dockerignore
