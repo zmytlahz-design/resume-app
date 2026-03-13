@@ -91,7 +91,7 @@ DEEPSEEK_EMBEDDING_MODEL=embedding-3
 docker-compose up -d --build
 ```
 
-等待构建完成后，访问：**http://localhost**
+等待构建完成后，访问：**http://localhost:3088**
 
 ### 4. 停止服务
 
