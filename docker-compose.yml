@@ -51,8 +51,8 @@ services:
     container_name: resume-frontend
 
     ports:
-      # ⑥ 浏览器访问 http://localhost 就到这里
-      - "80:80"
+      # 浏览器访问 http://localhost:3088
+      - "3088:80"
 
     # ⑦ depends_on: 声明依赖关系
     #    确保 backend 容器先启动，再启动 frontend

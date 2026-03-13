@@ -1,85 +1,110 @@
 <template>
-  <el-card class="upload-card">
+  <el-card class="upload-card" shadow="never">
     <template #header>
       <div class="card-header">
-        <el-icon><DocumentChecked /></el-icon>
-        <span>上传简历</span>
+        <div class="header-left">
+          <el-icon class="header-icon"><DocumentChecked /></el-icon>
+          <span>上传简历</span>
+        </div>
         <el-button
           v-if="hasStarted"
           class="reset-btn"
           size="small"
-          type="danger"
-          plain
+          text
+          bg
           @click="onReset"
         >
-          <el-icon><RefreshLeft /></el-icon> 重置
+          <el-icon><RefreshRight /></el-icon> 重置
         </el-button>
       </div>
     </template>
 
-    <!-- 文件拖拽区域 -->
-    <div
-      class="drop-zone"
-      :class="{ 'is-dragover': isDragover, 'has-file': file }"
-      @dragover.prevent="isDragover = true"
-      @dragleave="isDragover = false"
-      @drop.prevent="onDrop"
-      @click="fileInput.click()"
-    >
-      <input ref="fileInput" type="file" accept=".pdf" class="hidden-input" @change="onFileChange" />
-      <template v-if="file">
-        <el-icon class="file-icon"><Document /></el-icon>
-        <div class="file-name">{{ file.name }}</div>
-        <div class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</div>
-        <el-button type="danger" link size="small" @click.stop="clearFile">
-          <el-icon><Delete /></el-icon> 重新选择
+    <div class="card-content">
+      <!-- 文件拖拽区域 -->
+      <div
+        class="drop-zone"
+        :class="{ 'is-dragover': isDragover, 'has-file': file }"
+        @dragover.prevent="isDragover = true"
+        @dragleave="isDragover = false"
+        @drop.prevent="onDrop"
+        @click="fileInput.click()"
+      >
+        <input ref="fileInput" type="file" accept=".pdf" class="hidden-input" @change="onFileChange" />
+        
+        <transition name="fade" mode="out-in">
+          <div v-if="file" class="file-info" key="file">
+            <div class="file-icon-wrapper">
+              <el-icon><Document /></el-icon>
+            </div>
+            <div class="file-details">
+              <div class="file-name">{{ file.name }}</div>
+              <div class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</div>
+            </div>
+            <el-button class="reselect-btn" type="danger" link @click.stop="clearFile">
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+          
+          <div v-else class="upload-placeholder" key="placeholder">
+            <div class="icon-circle">
+              <el-icon><UploadFilled /></el-icon>
+            </div>
+            <div class="upload-text">点击或拖拽 PDF 简历</div>
+            <div class="upload-hint">支持最大 10MB</div>
+          </div>
+        </transition>
+      </div>
+
+      <transition name="el-fade-in">
+        <div v-if="errorMsg" class="error-msg">
+          <el-icon><WarningFilled /></el-icon> {{ errorMsg }}
+        </div>
+      </transition>
+
+      <!-- 职位信息 -->
+      <div class="form-section">
+        <el-form label-position="top" @submit.prevent class="custom-form">
+          <el-form-item label="目标职位">
+            <el-input
+              v-model="jobTitle"
+              placeholder="例如：高级前端工程师"
+              clearable
+              :disabled="isAnalyzing"
+            >
+              <template #prefix>
+                <el-icon><Suitcase /></el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
+          
+          <el-form-item label="职位描述 (JD)" class="flex-grow-item">
+            <el-input
+              v-model="jobDescription"
+              type="textarea"
+              :rows="6"
+              placeholder="请粘贴招聘 JD 要求..."
+              :disabled="isAnalyzing"
+              resize="none"
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <div class="action-footer">
+        <el-button
+          type="primary"
+          size="large"
+          class="submit-btn"
+          :disabled="!canSubmit"
+          :loading="isAnalyzing"
+          @click="onSubmit"
+          round
+        >
+          {{ isAnalyzing ? '正在智能诊断...' : '开始诊断' }}
+          <el-icon v-if="!isAnalyzing" class="el-icon--right"><ArrowRight /></el-icon>
         </el-button>
-      </template>
-      <template v-else>
-        <el-icon class="upload-icon"><UploadFilled /></el-icon>
-        <div class="upload-text">点击或拖拽 PDF 简历到此处</div>
-        <div class="upload-hint">支持 PDF 格式，最大 10MB</div>
-      </template>
+      </div>
     </div>
-
-    <div v-if="errorMsg" class="error-msg">
-      <el-icon><Warning /></el-icon> {{ errorMsg }}
-    </div>
-
-    <!-- 职位信息 -->
-    <div class="form-section">
-      <el-form label-position="top" @submit.prevent>
-        <el-form-item label="目标职位">
-          <el-input
-            v-model="jobTitle"
-            placeholder="例：前端工程师、产品经理、数据分析师"
-            clearable
-            :disabled="isAnalyzing"
-          />
-        </el-form-item>
-        <el-form-item label="职位描述 (JD)">
-          <el-input
-            v-model="jobDescription"
-            type="textarea"
-            :rows="5"
-            placeholder="粘贴招聘 JD，AI 将根据岗位要求诊断简历匹配度..."
-            :disabled="isAnalyzing"
-          />
-        </el-form-item>
-      </el-form>
-    </div>
-
-    <el-button
-      type="primary"
-      size="large"
-      class="submit-btn"
-      :disabled="!canSubmit"
-      :loading="isAnalyzing"
-      @click="onSubmit"
-    >
-      <el-icon v-if="!isAnalyzing"><MagicStick /></el-icon>
-      {{ isAnalyzing ? 'AI 分析中...' : '开始诊断' }}
-    </el-button>
   </el-card>
 </template>
 
@@ -87,6 +112,7 @@
 import { ref, computed } from 'vue'
 import { useResumeStore } from '../stores/resume'
 import { analyzeResume } from '../api/index'
+import { DocumentChecked, RefreshRight, Document, UploadFilled, Close, WarningFilled, Suitcase, ArrowRight } from '@element-plus/icons-vue'
 
 const emit = defineEmits(['updateJob'])
 
@@ -183,85 +209,204 @@ async function onSubmit() {
 <style scoped>
 .upload-card {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
 }
+
 .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-left {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 600;
   font-size: 16px;
+  color: #303133;
 }
-.reset-btn {
-  margin-left: auto;
+
+.header-icon {
+  color: #409eff;
+  background: #ecf5ff;
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 20px;
 }
+
+.card-content {
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 .drop-zone {
-  border: 2px dashed var(--el-border-color);
-  border-radius: 8px;
-  padding: 32px 16px;
+  border: 2px dashed #dcdfe6;
+  border-radius: 12px;
+  padding: 20px;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
-  background: var(--el-fill-color-lighter);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #fcfcfc;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
 }
+
 .drop-zone:hover,
 .drop-zone.is-dragover {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  border-color: #409eff;
+  background: #ecf5ff;
+  transform: translateY(-2px);
 }
+
 .drop-zone.has-file {
   border-style: solid;
-  border-color: var(--el-color-success);
-  background: var(--el-color-success-light-9);
+  border-color: #67c23a;
+  background: #f0f9eb;
 }
-.hidden-input {
-  display: none;
+
+.icon-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #f2f6fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  color: #909399;
+  transition: all 0.3s;
 }
-.upload-icon {
-  font-size: 48px;
-  color: var(--el-text-color-placeholder);
-  margin-bottom: 8px;
+
+.drop-zone:hover .icon-circle {
+  background: #fff;
+  color: #409eff;
 }
-.file-icon {
-  font-size: 40px;
-  color: var(--el-color-success);
-  margin-bottom: 6px;
-}
+
 .upload-text {
-  font-size: 15px;
-  color: var(--el-text-color-regular);
+  font-size: 14px;
+  font-weight: 500;
+  color: #606266;
   margin-bottom: 4px;
 }
+
 .upload-hint {
   font-size: 12px;
-  color: var(--el-text-color-placeholder);
+  color: #c0c4cc;
 }
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0 10px;
+}
+
+.file-icon-wrapper {
+  font-size: 32px;
+  color: #67c23a;
+}
+
+.file-details {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+}
+
 .file-name {
   font-size: 14px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: #303133;
   margin-bottom: 2px;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 .file-size {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
+  color: #909399;
 }
+
+.hidden-input { display: none; }
+
 .error-msg {
   display: flex;
   align-items: center;
-  gap: 4px;
-  color: var(--el-color-danger);
-  font-size: 13px;
+  justify-content: center;
+  gap: 6px;
+  color: #f56c6c;
+  font-size: 12px;
   margin-top: 8px;
+  background: #fef0f0;
+  padding: 6px;
+  border-radius: 4px;
 }
+
 .form-section {
+  margin-top: 24px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.flex-grow-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-grow-item :deep(.el-form-item__content) {
+  flex: 1;
+}
+
+.flex-grow-item :deep(.el-textarea),
+.flex-grow-item :deep(.el-textarea__inner) {
+  height: 100%;
+}
+
+.action-footer {
   margin-top: 20px;
 }
+
 .submit-btn {
   width: 100%;
-  margin-top: 8px;
-  height: 44px;
-  font-size: 15px;
+  height: 48px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+  transition: all 0.3s;
+}
+
+.submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.4);
+}
+
+/* 动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

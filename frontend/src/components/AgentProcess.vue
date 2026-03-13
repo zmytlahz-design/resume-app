@@ -1,54 +1,66 @@
 <template>
-  <el-card class="agent-card">
+  <el-card class="agent-card" shadow="never">
     <template #header>
       <div class="card-header">
-        <el-icon class="spin-icon" v-if="isAnalyzing"><Loading /></el-icon>
-        <el-icon v-else><Cpu /></el-icon>
-        <span>Agent 分析过程</span>
-        <el-tag v-if="displaySteps.length" size="small" type="info" round>
+        <div class="header-left">
+          <el-icon class="header-icon" :class="{ 'is-spinning': isAnalyzing }">
+            <Cpu v-if="!isAnalyzing" />
+            <Loading v-else />
+          </el-icon>
+          <span>智能分析引擎</span>
+        </div>
+        <el-tag v-if="displaySteps.length" size="small" type="info" effect="plain" round>
           {{ displaySteps.length }} 步
         </el-tag>
       </div>
     </template>
 
-    <div v-if="!displaySteps.length" class="empty-state">
-      <el-icon><Cpu /></el-icon>
-      <p>上传简历后，Agent 的思考过程将实时显示在这里</p>
-    </div>
-
-    <div v-else class="steps-list" ref="stepsList">
-      <div
-        v-for="step in displaySteps"
-        :key="step.id"
-        class="step-item"
-        :class="`step-${step.type}`"
-      >
-        <div class="step-icon">
-          <el-icon v-if="step.type === 'thinking'"><ChatDotRound /></el-icon>
-          <el-icon v-else><Tools /></el-icon>
+    <div class="card-content" ref="stepsList">
+      <div v-if="!displaySteps.length && !isAnalyzing" class="empty-state">
+        <div class="empty-icon-bg">
+          <el-icon><DataLine /></el-icon>
         </div>
-        <div class="step-body">
-          <div class="step-label">
-            <span v-if="step.type === 'thinking'">思考</span>
-            <span v-else>
-              工具调用
-              <el-tag v-if="step.tool" size="small" type="warning" class="tool-tag">
-                {{ step.tool }}
-              </el-tag>
-            </span>
-          </div>
-          <div class="step-content">{{ step.displayed }}<span v-if="step.typing" class="type-cursor">|</span></div>
-        </div>
+        <p class="empty-title">等待任务启动</p>
+        <p class="empty-desc">上传简历后，Agent 的思维链将在此实时展现</p>
       </div>
 
-      <div v-if="isAnalyzing" class="step-item step-thinking">
-        <div class="step-icon">
-          <el-icon class="spin-icon"><Loading /></el-icon>
-        </div>
-        <div class="step-body">
-          <div class="step-label">思考中...</div>
-        </div>
-      </div>
+      <el-timeline v-else class="custom-timeline">
+        <transition-group name="list">
+          <el-timeline-item
+            v-for="step in displaySteps"
+            :key="step.id"
+            :type="step.type === 'thinking' ? 'primary' : 'warning'"
+            :hollow="step.type === 'thinking'"
+            :timestamp="step.timestamp"
+            placement="top"
+            hide-timestamp
+            size="large"
+          >
+            <div class="step-card" :class="`step-${step.type}`">
+              <div class="step-header">
+                <span class="step-title">
+                  {{ step.type === 'thinking' ? '思考规划' : '调用工具' }}
+                </span>
+                <el-tag v-if="step.tool" size="small" type="warning" effect="dark" round class="tool-tag">
+                  {{ step.tool }}
+                </el-tag>
+              </div>
+              <div class="step-content">
+                {{ step.displayed }}<span v-if="step.typing" class="typing-cursor">|</span>
+              </div>
+            </div>
+          </el-timeline-item>
+
+          <el-timeline-item v-if="isAnalyzing" key="thinking-node" type="primary" size="large">
+            <div class="thinking-placeholder">
+              <div class="typing-indicator">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="thinking-text">AI 正在深入分析...</span>
+            </div>
+          </el-timeline-item>
+        </transition-group>
+      </el-timeline>
     </div>
   </el-card>
 </template>
@@ -56,30 +68,28 @@
 <script setup>
 import { computed, watch, nextTick, ref } from 'vue'
 import { useResumeStore } from '../stores/resume'
+import { Cpu, Loading, DataLine, ChatDotRound, Tools } from '@element-plus/icons-vue'
 
 const store = useResumeStore()
 const stepsList = ref(null)
 
-// 从 localStorage 恢复时直接显示完成状态，不重放动画
+// 恢复状态
 const restoredSteps = store.agentSteps.map(s => ({ ...s, displayed: s.content, typing: false, full: s.content }))
 const displaySteps = ref(restoredSteps)
 const typingQueue = ref([])
 let isTypingActive = false
-let knownCount = store.agentSteps.length   // 记录已处理过的步骤数，避免重放
+let knownCount = store.agentSteps.length
 
 const isAnalyzing = computed(() => store.isAnalyzing)
-const isTyping = computed(() => displaySteps.value.some(s => s.typing))
 
 async function scrollBottom() {
   await nextTick()
-  if (stepsList.value) stepsList.value.scrollTop = stepsList.value.scrollHeight
+  if (stepsList.value) {
+    stepsList.value.scrollTo({ top: stepsList.value.scrollHeight, behavior: 'smooth' })
+  }
 }
 
-// 逐字打印单个步骤
 function typeStep(stepIdx) {
-  // #region agent log
-  fetch('http://127.0.0.1:7500/ingest/f60e4ff7-5f4b-44e9-8293-177c66b632b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'291064'},body:JSON.stringify({sessionId:'291064',location:'AgentProcess.vue:typeStep',message:'typewriter start',data:{stepIdx,queueLen:typingQueue.value.length,t:Date.now()},hypothesisId:'H-B',timestamp:Date.now()})}).catch(()=>{})
-  // #endregion
   const step = displaySteps.value[stepIdx]
   if (!step) { processQueue(); return }
 
@@ -87,14 +97,13 @@ function typeStep(stepIdx) {
   let i = step.displayed.length
   step.typing = true
 
-  const speed = full.length > 60 ? 12 : 20   // 长文字快一点
+  const speed = full.length > 60 ? 10 : 18 
 
   const tick = () => {
     const s = displaySteps.value[stepIdx]
     if (!s) return
     if (i < full.length) {
-      // 每次多吐几个字符，避免太慢
-      const chunkSize = full.length > 100 ? 3 : 1
+      const chunkSize = full.length > 100 ? 4 : 2
       s.displayed = full.slice(0, Math.min(i + chunkSize, full.length))
       i = s.displayed.length
       scrollBottom()
@@ -102,9 +111,6 @@ function typeStep(stepIdx) {
     } else {
       s.displayed = full
       s.typing = false
-      // #region agent log
-      fetch('http://127.0.0.1:7500/ingest/f60e4ff7-5f4b-44e9-8293-177c66b632b9',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'291064'},body:JSON.stringify({sessionId:'291064',location:'AgentProcess.vue:typeStep',message:'typewriter done',data:{stepIdx,queueRemaining:typingQueue.value.length,t:Date.now()},hypothesisId:'H-B',timestamp:Date.now()})}).catch(()=>{})
-      // #endregion
       processQueue()
     }
   }
@@ -118,11 +124,9 @@ function processQueue() {
   }
   isTypingActive = true
   const stepIdx = typingQueue.value.shift()
-  // 步骤间加 400ms 停顿，让每一步感觉像真实 Agent 在逐步思考
-  setTimeout(() => typeStep(stepIdx), 400)
+  setTimeout(() => typeStep(stepIdx), 300)
 }
 
-// 监听 store 里新增的步骤（只处理新增的，不重放恢复的）
 watch(
   () => store.agentSteps.length,
   (newLen) => {
@@ -145,98 +149,217 @@ watch(
 </script>
 
 <style scoped>
-.agent-card { height: 100%; }
-.agent-card :deep(.el-card__body) {
-  height: calc(100% - 55px);
-  overflow: hidden;
-  padding: 0;
+.agent-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
 }
+
 .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-left {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 600;
   font-size: 16px;
+  color: #303133;
 }
+
+.header-icon {
+  font-size: 20px;
+  color: #409eff;
+  background: #ecf5ff;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.is-spinning {
+  animation: rotate 2s linear infinite;
+  color: #67c23a;
+  background: #f0f9eb;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.card-content {
+  padding: 24px 20px;
+  flex: 1;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  min-height: 200px;
-  color: var(--el-text-color-placeholder);
-  gap: 12px;
-  padding: 20px;
+  color: #909399;
   text-align: center;
 }
-.empty-state .el-icon { font-size: 40px; }
-.steps-list {
-  height: 100%;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.step-item {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.step-icon {
-  width: 28px;
-  height: 28px;
+
+.empty-icon-bg {
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
+  background: #f2f6fc;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  font-size: 14px;
+  font-size: 32px;
+  color: #c0c4cc;
+  margin-bottom: 16px;
 }
-.step-thinking .step-icon {
-  background: var(--el-color-primary-light-8);
-  color: var(--el-color-primary);
-}
-.step-observation .step-icon {
-  background: var(--el-color-warning-light-8);
-  color: var(--el-color-warning);
-}
-.step-body { flex: 1; min-width: 0; }
-.step-label {
-  font-size: 12px;
+
+.empty-title {
+  font-size: 16px;
   font-weight: 600;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 4px;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: #909399;
+}
+
+/* Timeline Customization */
+.custom-timeline {
+  padding-left: 2px;
+}
+
+.custom-timeline :deep(.el-timeline-item__node--primary) {
+  background-color: #409eff;
+  box-shadow: 0 0 0 4px #d9ecff;
+}
+
+.custom-timeline :deep(.el-timeline-item__node--warning) {
+  background-color: #e6a23c;
+  box-shadow: 0 0 0 4px #fdf6ec;
+}
+
+.custom-timeline :deep(.el-timeline-item__tail) {
+  border-left: 2px solid #e4e7ed;
+}
+
+.step-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid #ebeef5;
+  transition: all 0.3s;
+  position: relative;
+  top: -6px;
+}
+
+.step-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  background: #fff;
+  border-color: #dcdfe6;
+}
+
+.step-thinking .step-card {
+  border-left: 3px solid #409eff;
+}
+
+.step-observation .step-card {
+  border-left: 3px solid #e6a23c;
+}
+
+.step-header {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
-.tool-tag { margin-left: 4px; }
+
+.step-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #303133;
+}
+
 .step-content {
   font-size: 13px;
-  color: var(--el-text-color-regular);
-  background: var(--el-fill-color-light);
-  border-radius: 6px;
-  padding: 8px 12px;
   line-height: 1.6;
-  word-break: break-word;
+  color: #606266;
   white-space: pre-wrap;
+  word-break: break-word;
 }
-.type-cursor {
+
+.tool-tag {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.typing-cursor {
   display: inline-block;
-  color: var(--el-color-primary);
-  font-weight: 300;
-  animation: blink-cursor 0.7s step-end infinite;
-  margin-left: 1px;
+  width: 2px;
+  height: 14px;
+  background: #409eff;
+  margin-left: 2px;
+  animation: blink 0.8s infinite;
+  vertical-align: middle;
 }
-@keyframes blink-cursor {
+
+.thinking-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f0f9eb;
+  border-radius: 8px;
+  border: 1px dashed #67c23a;
+  color: #67c23a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  background: #67c23a;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+@keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
-.spin-icon { animation: spin 1s linear infinite; }
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+
+/* List Transitions */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.4s ease;
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-10px);
 }
 </style>

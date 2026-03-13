@@ -58,8 +58,9 @@ function onUpdateJob({ title, desc }) {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: #f0f2f5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f5f7fa;
+  color: #303133;
   height: 100vh;
   overflow: hidden;
 }
@@ -69,6 +70,19 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #dcdfe6;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 </style>
 
 <style scoped>
@@ -76,94 +90,127 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  background-image: radial-gradient(#e0eaff 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-color: #f5f7fa;
 }
 
 .app-header {
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-  color: #fff;
-  padding: 0 24px;
-  height: 56px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  color: #303133;
+  padding: 0 32px;
+  height: 64px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border-bottom: 1px solid #ebeef5;
+  z-index: 10;
 }
 
 .header-inner {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
   width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 18px;
+  gap: 10px;
+  font-size: 20px;
   font-weight: 700;
-  white-space: nowrap;
+  color: #409eff;
+  letter-spacing: -0.5px;
 }
 
 .logo .el-icon {
-  font-size: 22px;
+  font-size: 24px;
+  background: #ecf5ff;
+  padding: 6px;
+  border-radius: 8px;
 }
 
 .header-desc {
-  font-size: 13px;
-  opacity: 0.85;
-  white-space: nowrap;
+  font-size: 14px;
+  color: #909399;
+  background: #f4f4f5;
+  padding: 6px 12px;
+  border-radius: 20px;
 }
 
 .app-main {
   flex: 1;
   display: flex;
-  gap: 12px;
-  padding: 12px;
+  gap: 20px;
+  padding: 24px 32px;
   overflow: hidden;
-  min-height: 0;
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .col {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  transition: all 0.3s ease;
 }
 
 .col-left {
-  width: 320px;
+  width: 340px;
   flex-shrink: 0;
 }
 
 .col-mid {
-  width: 280px;
+  width: 320px;
   flex-shrink: 0;
 }
 
 .col-right {
   flex: 1;
-  gap: 12px;
+  gap: 20px;
   min-width: 0;
 }
 
 .right-top {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 
 .right-bottom {
-  height: 340px;
+  height: 380px;
   flex-shrink: 0;
 }
 
-/* el-card height 100% */
-.col-left :deep(.el-card),
-.col-mid :deep(.el-card),
-.right-top :deep(.el-card),
-.right-bottom :deep(.el-card) {
+/* 全局卡片样式覆盖 */
+.col :deep(.el-card) {
   height: 100%;
+  border: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  border-radius: 12px;
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+
+.col :deep(.el-card:hover) {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+}
+
+.col :deep(.el-card__header) {
+  border-bottom: 1px solid #f2f6fc;
+  padding: 16px 20px;
+}
+
+.col :deep(.el-card__body) {
+  padding: 0;
+  flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 </style>
