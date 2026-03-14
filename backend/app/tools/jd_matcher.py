@@ -13,8 +13,8 @@ from app.core.config import get_settings
 settings = get_settings()
 
 client = OpenAI(
-    api_key=settings.deepseek_api_key,
-    base_url=settings.deepseek_base_url,
+    api_key=settings.llm_api_key,
+    base_url=settings.llm_base_url,
 )
 
 
@@ -55,11 +55,11 @@ def _fallback_extract_jd_keywords(job_title: str, job_description: str) -> dict:
 
 def get_embedding(text: str) -> list[float]:
     """
-    调用 DeepSeek embedding 接口，把文本转为向量
+    调用配置中的 embedding 接口（如智谱 embedding-3），把文本转为向量
     ⭐ 这就是 RAG 第一步：Embedding
     """
     response = client.embeddings.create(
-        model=settings.deepseek_embedding_model,
+        model=settings.llm_embedding_model,
         input=text,
     )
     return response.data[0].embedding
@@ -99,7 +99,7 @@ def extract_jd_keywords(job_title: str, job_description: str) -> dict:
 
     try:
         response = client.chat.completions.create(
-            model=settings.deepseek_model,
+            model=settings.llm_model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.1,

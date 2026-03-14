@@ -173,7 +173,7 @@ async function onSubmit() {
     await analyzeResume(file.value, jobTitle.value, jobDescription.value, (type, data) => {
       switch (type) {
         case 'session_id':
-          store.sessionId = data
+          store.setSessionIdFromServer(data)
           break
         case 'thinking':
           store.addAgentStep('thinking', data)

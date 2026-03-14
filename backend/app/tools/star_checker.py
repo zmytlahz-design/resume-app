@@ -14,8 +14,8 @@ from app.core.config import get_settings
 
 settings = get_settings()
 client = OpenAI(
-    api_key=settings.deepseek_api_key,
-    base_url=settings.deepseek_base_url,
+    api_key=settings.llm_api_key,
+    base_url=settings.llm_base_url,
 )
 
 
@@ -45,7 +45,7 @@ STAR法则：
 }}"""
 
     response = client.chat.completions.create(
-        model=settings.deepseek_model,
+        model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         temperature=0.1,

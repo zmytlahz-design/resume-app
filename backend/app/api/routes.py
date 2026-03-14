@@ -213,8 +213,8 @@ async def chat(request: ChatRequest):
     settings = get_settings()
 
     client = AsyncOpenAI(
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
         timeout=90.0,
         max_retries=2,
     )
@@ -232,7 +232,7 @@ async def chat(request: ChatRequest):
             # 智谱等兼容供应商不支持 .stream() 上下文管理器，
             # 必须用 .create(stream=True) 才能拿到真实 token 流。
             stream = await client.chat.completions.create(
-                model=settings.deepseek_model,
+                model=settings.llm_model,
                 messages=stream_messages,
                 temperature=0.7,
                 stream=True,

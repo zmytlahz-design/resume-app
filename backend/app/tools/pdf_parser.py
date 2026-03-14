@@ -13,10 +13,10 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# DeepSeek 兼容 OpenAI SDK，只需改 base_url
+# 智谱/DeepSeek 等兼容 OpenAI SDK，通过 config 的 base_url 切换
 client = OpenAI(
-    api_key=settings.deepseek_api_key,
-    base_url=settings.deepseek_base_url,
+    api_key=settings.llm_api_key,
+    base_url=settings.llm_base_url,
 )
 
 
@@ -64,7 +64,7 @@ def parse_resume_structure(raw_text: str) -> dict:
 """
 
     response = client.chat.completions.create(
-        model=settings.deepseek_model,
+        model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},  # 强制JSON输出，避免格式错误
         temperature=0.1,  # 低温度 = 更稳定的结构化输出

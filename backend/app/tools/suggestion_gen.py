@@ -13,8 +13,8 @@ from app.core.config import get_settings
 
 settings = get_settings()
 client = OpenAI(
-    api_key=settings.deepseek_api_key,
-    base_url=settings.deepseek_base_url,
+    api_key=settings.llm_api_key,
+    base_url=settings.llm_base_url,
 )
 
 
@@ -126,7 +126,7 @@ def run_suggestion_generator(
     prompt = _sanitize_text(prompt)
 
     response = client.chat.completions.create(
-        model=settings.deepseek_model,
+        model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
         stream=True,  # 开启流式输出
         temperature=0.7,  # 稍高温度，建议更有创意
@@ -150,11 +150,11 @@ async def run_suggestion_generator_async(
     prompt = _sanitize_text(prompt)
 
     async_client = AsyncOpenAI(
-        api_key=settings.deepseek_api_key,
-        base_url=settings.deepseek_base_url,
+    api_key=settings.llm_api_key,
+    base_url=settings.llm_base_url,
     )
     stream = await async_client.chat.completions.create(
-        model=settings.deepseek_model,
+        model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
         stream=True,
         temperature=0.7,
