@@ -1,24 +1,4 @@
-"""
-ReAct Agent 核心实现
-⭐ 这是整个项目最重要的文件，面试必讲！
-
-ReAct = Reasoning + Acting
-原理：LLM 像人一样，先思考(Thought)，再行动(Action)，再观察结果(Observation)，循环直到完成任务
-
-我们的 Agent 执行流程：
-Thought: 我需要先解析简历PDF
-Action: tool_call(pdf_parser)
-Observation: {结构化简历数据}
-Thought: 我需要分析与JD的匹配度
-Action: tool_call(jd_matcher)
-Observation: {匹配结果}
-... 依此类推直到生成最终建议
-
-⭐ 为什么这比直接调用LLM更好？
-   1. 每个工具都是可测试、可调试的独立模块
-   2. Agent可以根据中间结果动态决定下一步
-   3. 这就是生产级AI应用的标准架构
-"""
+"""Deterministic resume analysis agent with step-wise SSE output."""
 import json
 import asyncio
 import time
@@ -32,14 +12,10 @@ from app.tools.suggestion_gen import run_suggestion_generator, run_suggestion_ge
 
 class ResumeAgent:
     """
-    简历诊断 Agent
-    采用固定工具链模式（相比完全自主的ReAct，更稳定，适合生产）
-    ⭐ 面试解释：这是 Deterministic Agent，工具调用顺序固定
-       优点：稳定可预测，易于调试
-       vs 完全自主Agent：LLM自决定调用哪些工具，创意更强但不稳定
+    简历诊断 Agent，使用固定工具链保证稳定性和可观测性。
     """
 
-    # 前端打字机单步最长约 1.5s，需要保证后端两次 yield 之间至少有这么长间隔
+    # Keep a minimum gap between step events for UI readability.
     _MIN_STEP_GAP = 1.8
 
     def __init__(self):
@@ -47,7 +23,7 @@ class ResumeAgent:
         self._last_yield_time = 0
 
     async def _pace(self):
-        """保证与上一次 yield 之间有足够间隔，让前端打字机打完当前步骤"""
+        """Ensure a small gap between non-token step events."""
         now = time.time()
         gap = self._MIN_STEP_GAP - (now - self._last_yield_time)
         if gap > 0:
@@ -55,7 +31,7 @@ class ResumeAgent:
         self._last_yield_time = time.time()
 
     async def _emit_report_text(self, text: str):
-        """真流式：收到上游增量后立即透传给前端。"""
+        """Forward incremental report text as SSE chunks."""
         piece = str(text or "")
         if piece:
             yield self._format_event("report_chunk", piece)
@@ -192,15 +168,13 @@ class ResumeAgent:
         yield self._format_event("report_start", "")
 
         try:
-            # ⭐ 面试考点：用 AsyncOpenAI + async for，不阻塞事件循环
-            #    原来的同步 for chunk in stream 会卡住 event loop，导致
-            #    前面 yield 的 thinking/observation 事件全部积压到最后才 flush
+            # Stream report tokens asynchronously to avoid blocking the event loop.
             async for delta in run_suggestion_generator_async(
                 resume_data, job_title, jd_result, stack_result, star_result
             ):
                 yield self._format_event("report_chunk", delta)
         except Exception as e:
-            # 生成失败时回退到本地模板报告，避免流程中断。
+            # Fall back to a local markdown template if model generation fails.
             fallback_report = build_fallback_report_markdown(
                 job_title=job_title,
                 jd_result=jd_result,
@@ -238,12 +212,8 @@ class ResumeAgent:
 
     @staticmethod
     def _format_event(event_type: str, data: str) -> str:
-        """
-        SSE (Server-Sent Events) 标准格式
-        格式：event: 类型\ndata: 数据\n\n
-        前端用 EventSource 接收
-        """
-        # SSE 规范：多行数据需要每行都加 data: 前缀，否则前端会解析丢失。
+        """Build SSE payload in `event + data + blank line` format."""
+        # Prefix each data line to preserve multi-line payloads.
         safe_data = str(data).encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
         lines = safe_data.splitlines() or [""]
         payload = "\n".join(f"data: {line}" for line in lines)

@@ -1,10 +1,4 @@
-"""
-FastAPI 应用入口
-⭐ 面试考点：
-   - CORS：跨域资源共享，前端(localhost:5173)调后端(localhost:8000)必须配置
-   - 为什么用 lifespan 而不是 @app.on_event？新版FastAPI推荐方式
-   - uvicorn 是 ASGI 服务器，比 WSGI（Flask用的）支持异步，性能更好
-"""
+"""FastAPI application entrypoint."""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,9 +8,9 @@ from app.api.routes import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动时执行（可以在这里初始化数据库连接等）"""
-    print("🚀 简历诊断Agent服务启动")
+    print("Resume Agent service started")
     yield
-    print("👋 服务关闭")
+    print("Resume Agent service stopped")
 
 
 app = FastAPI(
@@ -26,8 +20,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ⭐ CORS 配置：允许前端跨域访问
-# 生产环境要把 origins 改成你的真实域名，不能用 "*"（安全原则）
+# CORS configuration for local dev and deployed frontend origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

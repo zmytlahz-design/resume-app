@@ -1,18 +1,4 @@
-"""
-API 路由层
-⭐ 面试考点：
-   1. SSE (Server-Sent Events) vs WebSocket：
-      - SSE：单向（服务端→客户端），HTTP协议，适合流式输出
-      - WebSocket：双向实时，协议更复杂，适合聊天室
-      我们用SSE因为只需要服务端推送流式文本
-   
-   2. Session 管理：
-      - 用字典存对话历史（dict key = session_id）
-      - 生产环境应该用 Redis，但两天项目内存够用
-   
-   3. 为什么 session_id 用 UUID？
-      - 全局唯一，用户隔离，安全
-"""
+"""API routes for resume analysis and follow-up chat."""
 import uuid
 import time
 from typing import Optional
@@ -20,9 +6,6 @@ from fastapi import APIRouter, File, UploadFile, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.agents.resume_agent import ResumeAgent
-# ⭐ 面试考点：用 Redis 代替内存字典
-#    - 内存字典：进程重启即丢失，无法多副本共享
-#    - Redis：持久化 + 自动 TTL + 容器间共享
 from app.core.redis_client import cache_set, session_append, session_get, session_set
 
 router = APIRouter(prefix="/api", tags=["resume"])
@@ -42,7 +25,7 @@ def _sanitize_text(text: str) -> str:
 
 
 def _sse_event(event_type: str, data: str) -> str:
-    """SSE 安全编码：多行 data 需要逐行前缀 data:"""
+    """Build an SSE event payload with safe UTF-8 text."""
     safe = _sanitize_text(data)
     lines = safe.splitlines() or [""]
     payload = "\n".join(f"data: {line}" for line in lines)
@@ -54,7 +37,7 @@ def _compact_messages(
     max_chars: int = 12000,
     max_items: int = 12,
 ) -> list[dict]:
-    """压缩上下文，避免历史过长导致供应商拒绝流式请求。"""
+    """Trim chat history to keep streaming requests within provider limits."""
     if not messages:
         return []
 
@@ -98,8 +81,7 @@ async def analyze_resume(
     """
     主接口：上传简历 + 职位信息，返回SSE流式诊断报告
     
-    前端用 fetch + ReadableStream 接收，或者用 EventSource
-    ⭐ 注意：UploadFile + Form 混用时必须用 multipart/form-data
+    前端使用 fetch + ReadableStream 解析 SSE。
     """
     # 校验文件类型
     if not file.filename.endswith(".pdf"):
@@ -132,10 +114,7 @@ async def analyze_resume(
 
     async def event_stream():
         """
-        生成 SSE 事件流
-        ⭐ 面试考点：为什么用 async generator？
-           - 不阻塞，每生成一段数据立刻推送给前端
-           - 用户不需要等全部完成才看到结果
+        生成 SSE 事件流。
         """
         t0 = time.time()
         # 先发送 session_id 给前端保存
@@ -170,7 +149,6 @@ async def analyze_resume(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # 禁用Nginx缓冲，确保实时推送
         },
     )
 
@@ -189,17 +167,14 @@ async def test_stream():
     return StreamingResponse(
         gen(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache"},
     )
 
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
     """
-    追问接口：基于已分析的简历继续对话
-    ⭐ 面试考点：上下文管理
-       - 把历史消息全部传给LLM，它就能"记住"之前的分析结果
-       - 这就是会话式AI的本质：消息列表就是记忆
+    追问接口：基于已分析的简历继续对话。
     """
     session_id = request.session_id
     
@@ -229,8 +204,7 @@ async def chat(request: ChatRequest):
         ]
 
         async def _stream_once(stream_messages: list[dict]):
-            # 智谱等兼容供应商不支持 .stream() 上下文管理器，
-            # 必须用 .create(stream=True) 才能拿到真实 token 流。
+            # Some OpenAI-compatible providers require .create(stream=True).
             stream = await client.chat.completions.create(
                 model=settings.llm_model,
                 messages=stream_messages,
@@ -336,7 +310,7 @@ async def chat(request: ChatRequest):
     return StreamingResponse(
         chat_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache"},
     )
 
 

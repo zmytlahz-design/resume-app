@@ -23,13 +23,13 @@
 |------|------|
 | 前端框架 | Vue 3 + Vite |
 | 前端状态 | Pinia（持久化到 localStorage）|
-| 前端渲染 | Nginx（反向代理 `/api`）|
+| 前端运行 | Vite Dev Server（`/api` 代理到后端）|
 | 后端框架 | Python FastAPI |
 | 流式协议 | SSE（Server-Sent Events）|
 | AI Agent | ReAct 架构（自定义工具链）|
 | 大语言模型 | GLM-4-Flash（智谱 AI）|
 | 会话存储 | Redis（2h TTL 自动过期）|
-| 容器编排 | Docker Compose |
+| 运行方式 | 本地开发（前端 Vite + 后端 FastAPI） |
 
 ---
 
@@ -38,18 +38,13 @@
 ```
 浏览器
   │
-  ├─ 静态资源（Vue3 SPA）─── Nginx :80
+  ├─ Vue3 + Vite Dev Server :5173
+  │        │
+  │        └─ /api/*（Vite Proxy）
   │
-  └─ /api/* ──────────────── Nginx 反向代理
-                                  │
-                             FastAPI :8011
-                                  │
-                    ┌─────────────┴──────────────┐
-                    │                            │
-               ReAct Agent                   Redis
-               （pdf_parser                 session / cache
-                jd_matcher                  2h TTL
-                stack_checker）
+  └──────────────────────────────→ FastAPI :8011
+                                   │
+                        ReAct Agent + Redis Session/Cache
 ```
 
 ---
@@ -58,7 +53,8 @@
 
 ### 前置条件
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) 已安装并运行
+- Python 3.10+
+- Node.js 18+
 
 ### 1. 克隆项目
 
@@ -67,7 +63,7 @@ git clone https://github.com/YOUR_USERNAME/resume-app.git
 cd resume-app
 ```
 
-### 2. 配置 API Key
+### 2. 配置 API Key（后端）
 
 ```bash
 # 复制示例文件
@@ -77,26 +73,47 @@ cp .env.example backend/.env
 # 申请地址：https://open.bigmodel.cn/
 ```
 
-`.env` 内容示例：
+`backend/.env` 内容示例：
 ```
-DEEPSEEK_API_KEY=your_api_key_here
-DEEPSEEK_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-DEEPSEEK_MODEL=glm-4-flash
-DEEPSEEK_EMBEDDING_MODEL=embedding-3
+ZHIPU_API_KEY=your_api_key_here
+ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+ZHIPU_MODEL=glm-4-flash
+ZHIPU_EMBEDDING_MODEL=embedding-3
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
 ```
 
-### 3. 启动服务
+### 3. 启动 Redis
 
 ```bash
-docker-compose up -d --build
+docker run -d --name resume-redis -p 6379:6379 redis:7-alpine
 ```
 
-等待构建完成后，访问：**http://localhost:3088**
-
-### 4. 停止服务
+### 4. 启动后端（FastAPI）
 
 ```bash
-docker-compose down
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
+```
+
+### 5. 启动前端（Vite）
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+启动后访问：**http://localhost:5173**
+
+### 6. 停止服务
+
+```bash
+# 前端/后端终端使用 Ctrl + C 停止
+docker stop resume-redis
 ```
 
 ---
@@ -113,7 +130,7 @@ resume-app/
 │   │   │   └── routes.py         # SSE 流式接口
 │   │   ├── core/
 │   │   │   ├── config.py         # Pydantic 配置管理
-│   │   │   └── redis_client.py   # Redis 会话封装
+│   │   │   └── redis_client.py   # Redis 会话/缓存封装（TTL）
 │   │   └── tools/
 │   │       ├── pdf_parser.py     # PDF 解析工具
 │   │       ├── jd_matcher.py     # JD 匹配工具
@@ -131,7 +148,6 @@ resume-app/
 │   │       └── ChatBox.vue       # 追问对话框
 │   ├── Dockerfile
 │   └── vite.config.js
-└── docker-compose.yml
 ```
 
 ---
@@ -145,7 +161,7 @@ Agent 在每一轮迭代中依次执行**思考（Thought）→ 工具调用（A
 使用 HTTP SSE 协议（而非 WebSocket）实现服务端到客户端的单向数据推送，无需握手升级，天然兼容 HTTP/2，适合"服务端持续推送、客户端只读"的场景。
 
 ### 3. Redis 会话隔离
-每个用户分配唯一 `session_id`（UUID），对话历史存入 Redis（`session:{id}`），PDF 解析结果单独缓存（`cache:{id}`），2 小时自动过期，天然支持水平扩展。
+每个用户分配唯一 `session_id`（UUID），对话历史存入 Redis（`resume:session:{id}`），PDF 解析结果单独缓存（`resume:cache:{id}`），2 小时自动过期。
 
 ### 4. Vue 3 响应式持久化
 分析结果（Agent 步骤、诊断报告、聊天记录）写入 `localStorage`，刷新页面无需重新分析，解决 SPA 状态丢失问题。

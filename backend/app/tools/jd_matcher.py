@@ -1,10 +1,4 @@
-"""
-Tool 2: JD 职位描述匹配器
-⭐ 面试考点（这是最重要的工具！）：
-   - 用 embedding 把文本变成向量，再算余弦相似度
-   - 这就是 RAG 的核心思路：文本 → 向量 → 相似度检索
-   - 为什么不用 pgvector？原理一样，两天内先跑通，后期无缝替换
-"""
+"""Tool 2: compute JD match score from resume data."""
 import numpy as np
 import re
 from openai import OpenAI
@@ -55,8 +49,7 @@ def _fallback_extract_jd_keywords(job_title: str, job_description: str) -> dict:
 
 def get_embedding(text: str) -> list[float]:
     """
-    调用配置中的 embedding 接口（如智谱 embedding-3），把文本转为向量
-    ⭐ 这就是 RAG 第一步：Embedding
+    调用 embedding 接口，将文本转换为向量。
     """
     response = client.embeddings.create(
         model=settings.llm_embedding_model,
@@ -69,9 +62,7 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """
     余弦相似度 = 两向量夹角的余弦值
     值域 [-1, 1]，越接近1表示越相似
-    ⭐ 面试必问：为什么用余弦相似度而不是欧氏距离？
-       因为我们关心方向（语义）而不是大小（长度），
-       长短文本都能公平比较
+    通过余弦相似度衡量语义接近程度。
     """
     a = np.array(vec1)
     b = np.array(vec2)

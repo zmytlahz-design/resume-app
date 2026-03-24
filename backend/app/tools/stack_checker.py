@@ -1,10 +1,4 @@
-"""
-Tool 3: 技术栈覆盖率检测
-⭐ 面试考点：
-   - 把 JD 要求的技能 与 简历的技能 做集合交集运算
-   - 分为"已覆盖"、"缺失必须"、"缺失加分项"三类
-   - 给候选人明确的补短建议
-"""
+"""Tool 3: compare resume skills against JD requirements."""
 
 
 def run_stack_checker(resume_data: dict, jd_analysis: dict) -> dict:

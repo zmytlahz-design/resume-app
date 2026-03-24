@@ -1,14 +1,4 @@
-"""
-Tool 4: STAR 法则检测器
-⭐ 面试考点：
-   STAR = Situation(背景) + Task(任务) + Action(行动) + Result(结果)
-   优秀的简历项目描述必须包含这四个要素
-   
-   为什么让 LLM 来判断而不用规则？
-   - 自然语言表达方式太多样，规则覆盖不全
-   - LLM 理解语义，判断更准确
-   - 这是 LLM 最擅长的：语义理解类任务
-"""
+"""Tool 4: evaluate resume descriptions with STAR framework."""
 from openai import OpenAI
 from app.core.config import get_settings
 

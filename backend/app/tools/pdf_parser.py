@@ -1,10 +1,4 @@
-"""
-Tool 1: PDF 简历解析器
-⭐ 面试考点：
-   - 为什么用 pdfplumber？支持表格提取，中文不乱码
-   - 结构化提取：把非结构化PDF → 结构化字典，方便后续工具使用
-   - 用 LLM 做结构化提取，比正则表达式更健壮
-"""
+"""Tool 1: parse resume PDF into structured fields."""
 import pdfplumber
 import io
 import re
@@ -13,7 +7,7 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# 智谱/DeepSeek 等兼容 OpenAI SDK，通过 config 的 base_url 切换
+# OpenAI-compatible client configured via settings.
 client = OpenAI(
     api_key=settings.llm_api_key,
     base_url=settings.llm_base_url,
@@ -44,8 +38,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 def parse_resume_structure(raw_text: str) -> dict:
     """
-    用 LLM 把原始文本 → 结构化简历数据
-    ⭐ 这里是关键：prompt engineering 的实战应用
+    用 LLM 把原始文本解析成结构化简历数据。
     :param raw_text: PDF提取的原始文本
     :return: 结构化简历字典
     """
@@ -66,8 +59,8 @@ def parse_resume_structure(raw_text: str) -> dict:
     response = client.chat.completions.create(
         model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},  # 强制JSON输出，避免格式错误
-        temperature=0.1,  # 低温度 = 更稳定的结构化输出
+        response_format={"type": "json_object"},
+        temperature=0.1,
     )
 
     import json
@@ -138,7 +131,6 @@ def run_pdf_parser(file_bytes: bytes) -> dict:
     try:
         structured = parse_resume_structure(raw_text)
     except UnicodeEncodeError:
-        # 典型报错：'ascii' codec can't encode characters
         structured = fallback_parse_resume_structure(raw_text)
         structured["parse_warning"] = "LLM结构化阶段发生编码异常，已使用本地兜底解析"
     except Exception:

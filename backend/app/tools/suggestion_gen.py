@@ -1,12 +1,4 @@
-"""
-Tool 5: 优化建议生成器
-⭐ 面试考点：
-   这个 Tool 是 Agent 的最后一步，汇总所有工具的结果
-   生成有针对性的优化建议，而不是泛泛而谈
-   
-   关键设计：把前4个工具的输出作为上下文传入 prompt
-   这就是"工具编排"的价值 —— 每个工具专注一件事，最后汇总
-"""
+"""Tool 5: generate final resume optimization report."""
 from openai import OpenAI, AsyncOpenAI
 from typing import AsyncGenerator
 from app.core.config import get_settings
@@ -122,7 +114,6 @@ def run_suggestion_generator(
     """
     prompt = _build_prompt(resume_data, job_title, jd_result, stack_result, star_result)
 
-    # 注意：这里返回的是 generator，供流式输出使用
     prompt = _sanitize_text(prompt)
 
     response = client.chat.completions.create(
@@ -142,9 +133,7 @@ async def run_suggestion_generator_async(
     star_result: dict,
 ) -> AsyncGenerator[str, None]:
     """
-    ⭐ 面试考点：为什么用 AsyncOpenAI 而不是 OpenAI？
-       同步 for chunk in stream 会阻塞事件循环，导致其他 SSE 事件无法 flush
-       AsyncOpenAI + async for 让每个 token 到来时立即 yield，不阻塞
+    使用 AsyncOpenAI 进行异步流式返回。
     """
     prompt = _build_prompt(resume_data, job_title, jd_result, stack_result, star_result)
     prompt = _sanitize_text(prompt)
