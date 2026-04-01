@@ -34,18 +34,20 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import ResumeUpload from './components/ResumeUpload.vue'
 import AgentProcess from './components/AgentProcess.vue'
 import ReportDisplay from './components/ReportDisplay.vue'
 import ChatBox from './components/ChatBox.vue'
 
-const savedJob = JSON.parse(localStorage.getItem('resume_job') || 'null')
-const jobTitle = ref(savedJob?.title || '')
-const jobDescription = ref(savedJob?.desc || '')
+interface SavedJob { title: string; desc: string }
 
-function onUpdateJob({ title, desc }) {
+const savedJob = JSON.parse(localStorage.getItem('resume_job') ?? 'null') as SavedJob | null
+const jobTitle = ref<string>(savedJob?.title ?? '')
+const jobDescription = ref<string>(savedJob?.desc ?? '')
+
+function onUpdateJob({ title, desc }: { title: string; desc: string }): void {
   jobTitle.value = title
   jobDescription.value = desc
   if (title || desc) localStorage.setItem('resume_job', JSON.stringify({ title, desc }))

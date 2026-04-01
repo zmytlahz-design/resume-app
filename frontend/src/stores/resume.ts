@@ -8,17 +8,30 @@ const LS_STEPS   = 'resume_steps'
 const LS_CHAT    = 'resume_chat'
 const LS_EXPIRES = 'resume_expires_at'
 
-/** 与后端 Redis 一致：2 小时过期 */
 const TTL_MS = 2 * 60 * 60 * 1000
 
-function isLocalDataExpired() {
+export interface AgentStep {
+  id: number
+  type: 'thinking' | 'observation'
+  content: string
+  tool: string | null
+  timestamp?: string
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp?: number
+}
+
+function isLocalDataExpired(): boolean {
   const expires = localStorage.getItem(LS_EXPIRES)
   const sid = localStorage.getItem(LS_SESSION)
   if (!sid || !expires) return false
   return Date.now() > parseInt(expires, 10)
 }
 
-function clearExpiredLocalData() {
+function clearExpiredLocalData(): void {
   if (!isLocalDataExpired()) return
   localStorage.removeItem(LS_SESSION)
   localStorage.removeItem(LS_REPORT)
@@ -28,60 +41,58 @@ function clearExpiredLocalData() {
   localStorage.removeItem(LS_EXPIRES)
 }
 
-function saveSteps(steps) {
+function saveSteps(steps: AgentStep[]): void {
   try { localStorage.setItem(LS_STEPS, JSON.stringify(steps)) } catch {}
 }
-function saveChat(msgs) {
+function saveChat(msgs: ChatMessage[]): void {
   try { localStorage.setItem(LS_CHAT, JSON.stringify(msgs)) } catch {}
 }
 
-// 进入应用时先清理过期数据，再读 localStorage
 clearExpiredLocalData()
 
 export const useResumeStore = defineStore('resume', () => {
-  const sessionId    = ref(localStorage.getItem(LS_SESSION) || '')
-  const isAnalyzing  = ref(false)
-  const agentSteps   = ref(JSON.parse(localStorage.getItem(LS_STEPS) || '[]'))
-  const reportChunks = ref(localStorage.getItem(LS_REPORT) ? [localStorage.getItem(LS_REPORT)] : [])
-  const reportDone   = ref(!!localStorage.getItem(LS_REPORT))
-  const chatMessages = ref(JSON.parse(localStorage.getItem(LS_CHAT) || '[]'))
+  const sessionId    = ref<string>(localStorage.getItem(LS_SESSION) ?? '')
+  const isAnalyzing  = ref<boolean>(false)
+  const agentSteps   = ref<AgentStep[]>(JSON.parse(localStorage.getItem(LS_STEPS) ?? '[]'))
+  const reportChunks = ref<string[]>(localStorage.getItem(LS_REPORT) ? [localStorage.getItem(LS_REPORT)!] : [])
+  const reportDone   = ref<boolean>(!!localStorage.getItem(LS_REPORT))
+  const chatMessages = ref<ChatMessage[]>(JSON.parse(localStorage.getItem(LS_CHAT) ?? '[]'))
 
-  const report = computed(() => reportChunks.value.join(''))
-  const hasReport = computed(() => reportDone.value && report.value.length > 0)
+  const report    = computed<string>(() => reportChunks.value.join(''))
+  const hasReport = computed<boolean>(() => reportDone.value && report.value.length > 0)
 
-  function addAgentStep(type, content, tool = null) {
+  function addAgentStep(type: AgentStep['type'], content: string, tool: string | null = null): void {
     agentSteps.value.push({ type, content, tool, id: Date.now() + Math.random() })
     saveSteps(agentSteps.value)
   }
 
-  function appendReport(chunk) {
+  function appendReport(chunk: string): void {
     reportChunks.value.push(chunk)
   }
 
-  function addChatMessage(role, content) {
-    chatMessages.value.push({ role, content })
+  function addChatMessage(role: ChatMessage['role'], content: string): void {
+    chatMessages.value.push({ role, content, timestamp: Date.now() })
     saveChat(chatMessages.value)
   }
 
-  function updateLastChat(content) {
+  function updateLastChat(content: string): void {
     const last = chatMessages.value[chatMessages.value.length - 1]
     if (last) last.content = content
     saveChat(chatMessages.value)
   }
 
-  function persistChat() {
+  function persistChat(): void {
     saveChat(chatMessages.value)
   }
 
-  /** 服务端返回新 session 时调用，同时写入 2h 过期时间 */
-  function setSessionIdFromServer(sid) {
+  function setSessionIdFromServer(sid: string): void {
     sessionId.value = sid
     try {
       localStorage.setItem(LS_EXPIRES, String(Date.now() + TTL_MS))
     } catch {}
   }
 
-  function reset() {
+  function reset(): void {
     sessionId.value = ''
     isAnalyzing.value = false
     agentSteps.value = []

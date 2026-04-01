@@ -1,4 +1,9 @@
-"""Tool 5: generate final resume optimization report."""
+"""Tool 5: generate final resume optimization report.
+
+该模块负责“最终文案生成”：
+- 输入前序工具的结构化结果；
+- 产出 markdown 报告（流式 token）。
+"""
 from openai import OpenAI, AsyncOpenAI
 from typing import AsyncGenerator
 from app.core.config import get_settings
@@ -16,50 +21,6 @@ def _sanitize_text(text: str) -> str:
     return text.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
 
 
-def _safe_join(items: list) -> str:
-    return ", ".join(_sanitize_text(str(i)) for i in items if i is not None)
-
-
-def build_fallback_report_markdown(
-    job_title: str,
-    jd_result: dict,
-    stack_result: dict,
-    star_result: dict,
-) -> str:
-    """模型生成失败时的本地模板报告，保证前端可展示结果。"""
-    match_score = jd_result.get("match_score", 0)
-    coverage_rate = stack_result.get("coverage_rate", 0)
-    star_score = star_result.get("overall_star_score", 0)
-    missing_required = stack_result.get("missing_required", [])
-
-    level = "较高" if match_score >= 70 else "中等" if match_score >= 40 else "较低"
-    missing_text = _safe_join(missing_required) if missing_required else "暂无"
-
-    return f"""## 总体评估
-目标岗位：{_sanitize_text(job_title)}。当前简历与岗位匹配度为 **{match_score}%**（{level}），技术栈覆盖率为 **{coverage_rate}%**，STAR 表达得分为 **{star_score}/10**。
-
-## 优势亮点
-- 具备与目标岗位相关的基础能力，并已形成可展示的项目经历。
-- 简历结构化信息完整，可继续优化关键词命中率。
-- 已完成初步诊断，可快速进入定向修改阶段。
-
-## 核心问题
-- 必须技能缺失：{missing_text}
-- 项目描述存在“结果量化不足”风险，建议补充指标（如性能提升、转化率、效率提升）。
-- 职责描述偏泛化，建议改成“动作+技术+结果”表达。
-
-## 具体改写示例
-改写前：负责前端页面开发与接口联调。
-
-改写后：基于 Vue3 + TypeScript 重构核心业务页面，封装 12 个复用组件；完成与 FastAPI 接口联调并优化请求缓存策略，使页面首屏加载时间下降约 28%。
-
-## 行动建议
-1. 本周优先补齐 2-3 个缺失必须技能，并在项目中体现。
-2. 每段经历至少补 1 条可量化结果（百分比、时长、成本、成功率）。
-3. 按目标岗位 JD 关键词重排技能与项目顺序，提高 ATS 命中率。
-"""
-
-
 def _build_prompt(
     resume_data: dict,
     job_title: str,
@@ -67,6 +28,7 @@ def _build_prompt(
     stack_result: dict,
     star_result: dict,
 ) -> str:
+    # Prompt 只做“信息整合与表达”，计算逻辑由前置工具完成。
     return f"""你是一位资深 HR 和技术面试官，请根据以下简历分析结果，为候选人生成专业的优化建议报告。
 
 ## 目标职位
@@ -108,8 +70,9 @@ def run_suggestion_generator(
     star_result: dict,
 ) -> str:
     """
-    Tool 5 对外统一入口
-    汇总所有工具结果，生成结构化优化建议
+    Tool 5 同步流式入口。
+    说明：当前 Agent 主流程主要走 async 版本，这里保留为可复用接口。
+    汇总所有工具结果，生成结构化优化建议。
     :return: Markdown 格式的建议报告（用于流式输出）
     """
     prompt = _build_prompt(resume_data, job_title, jd_result, stack_result, star_result)
@@ -120,7 +83,7 @@ def run_suggestion_generator(
         model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
         stream=True,  # 开启流式输出
-        temperature=0.7,  # 稍高温度，建议更有创意
+        temperature=0.7,  # 适度提高温度，让建议更自然
     )
     return response  # 返回流式响应对象
 
@@ -133,7 +96,11 @@ async def run_suggestion_generator_async(
     star_result: dict,
 ) -> AsyncGenerator[str, None]:
     """
-    使用 AsyncOpenAI 进行异步流式返回。
+    异步流式入口（Agent 实际调用路径）。
+
+    返回值是逐段 token（delta）：
+    - Agent 会把每个 delta 包装成 SSE `report_chunk` 发给前端；
+    - 前端边收边渲染，用户可实时看到报告生成过程。
     """
     prompt = _build_prompt(resume_data, job_title, jd_result, stack_result, star_result)
     prompt = _sanitize_text(prompt)
@@ -149,6 +116,7 @@ async def run_suggestion_generator_async(
         temperature=0.7,
     )
     async for chunk in stream:
+        # 兼容不同服务商的 chunk 结构：先判空再取 delta content。
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue

@@ -1,4 +1,9 @@
-"""Tool 4: evaluate resume descriptions with STAR framework."""
+"""Tool 4: evaluate resume descriptions with STAR framework.
+
+职责：
+- 对工作经历/项目经历逐条做 STAR 维度检查；
+- 返回单条结果 + 总体平均分，供报告模块使用。
+"""
 from openai import OpenAI
 from app.core.config import get_settings
 
@@ -10,7 +15,7 @@ client = OpenAI(
 
 
 def check_single_experience(experience_text: str, exp_title: str) -> dict:
-    """检查单条经历是否符合STAR法则"""
+    """检查单条经历是否符合 STAR 法则并返回结构化结果。"""
     prompt = f"""分析以下简历经历描述，检查是否包含STAR法则的四个要素。
 
 STAR法则：
@@ -34,6 +39,7 @@ STAR法则：
   "improvement_hint": "一句话改进建议"
 }}"""
 
+    # 采用 JSON 响应格式，避免自然语言输出带来的解析不稳定。
     response = client.chat.completions.create(
         model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
@@ -46,12 +52,17 @@ STAR法则：
 
 def run_star_checker(resume_data: dict) -> dict:
     """
-    Tool 4 对外统一入口
-    检查所有工作经历和项目的STAR法则完整性
+    Tool 4 对外统一入口。
+
+    执行逻辑：
+    1) 遍历工作经历 responsibilities；
+    2) 遍历项目经历 description；
+    3) 对每条文本调用 check_single_experience；
+    4) 汇总平均分并输出 summary。
     """
     results = []
     
-    # 检查工作/实习经历
+    # 检查工作/实习经历（优先看 responsibilities 字段）。
     for exp in resume_data.get("work_experience", []):
         description = "\n".join(exp.get("responsibilities", []))
         if description.strip():
@@ -61,7 +72,7 @@ def run_star_checker(resume_data: dict) -> dict:
             check["type"] = "工作经历"
             results.append(check)
     
-    # 检查项目经历
+    # 检查项目经历（兼容中文/英文字段名）。
     for proj in resume_data.get("projects", []):
         description = proj.get("描述", "") or proj.get("description", "")
         if description.strip():
@@ -72,6 +83,7 @@ def run_star_checker(resume_data: dict) -> dict:
             results.append(check)
     
     if not results:
+        # 无可评估文本时返回错误标记，由 Agent 决定是否降级跳过。
         return {"error": "未找到可检查的经历描述", "results": []}
     
     avg_score = round(sum(r.get("star_score", 0) for r in results) / len(results), 1)

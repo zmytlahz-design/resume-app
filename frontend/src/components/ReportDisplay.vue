@@ -34,23 +34,23 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, watch, nextTick, ref } from 'vue'
 import { marked } from 'marked'
 import { useResumeStore } from '../stores/resume'
 import { DataAnalysis, Select, Loading, DocumentCopy } from '@element-plus/icons-vue'
 
 const store = useResumeStore()
-const reportBody = ref(null)
+const reportBody = ref<HTMLElement | null>(null)
 
 const report = computed(() => store.report)
 const hasReport = computed(() => store.hasReport)
 const isAnalyzing = computed(() => store.isAnalyzing)
 const reportDone = computed(() => store.reportDone)
 
-const renderedReport = computed(() => {
+const renderedReport = computed<string>(() => {
   if (!report.value) return ''
-  return marked.parse(report.value)
+  return marked.parse(report.value) as string
 })
 
 watch(report, async () => {

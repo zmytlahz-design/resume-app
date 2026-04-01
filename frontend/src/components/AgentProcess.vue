@@ -65,31 +65,40 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, watch, nextTick, ref } from 'vue'
 import { useResumeStore } from '../stores/resume'
-import { Cpu, Loading, DataLine, ChatDotRound, Tools } from '@element-plus/icons-vue'
+import type { AgentStep } from '../stores/resume'
+import { Cpu, Loading, DataLine } from '@element-plus/icons-vue'
+
+interface DisplayStep extends AgentStep {
+  displayed: string
+  typing: boolean
+  full: string
+}
 
 const store = useResumeStore()
-const stepsList = ref(null)
+const stepsList = ref<HTMLElement | null>(null)
 
-// 恢复状态
-const restoredSteps = store.agentSteps.map(s => ({ ...s, displayed: s.content, typing: false, full: s.content }))
-const displaySteps = ref(restoredSteps)
-const typingQueue = ref([])
+const restoredSteps: DisplayStep[] = store.agentSteps.map(s => ({
+  ...s,
+  displayed: s.content,
+  typing: false,
+  full: s.content,
+}))
+const displaySteps = ref<DisplayStep[]>(restoredSteps)
+const typingQueue = ref<number[]>([])
 let isTypingActive = false
 let knownCount = store.agentSteps.length
 
 const isAnalyzing = computed(() => store.isAnalyzing)
 
-async function scrollBottom() {
+async function scrollBottom(): Promise<void> {
   await nextTick()
-  if (stepsList.value) {
-    stepsList.value.scrollTo({ top: stepsList.value.scrollHeight, behavior: 'smooth' })
-  }
+  stepsList.value?.scrollTo({ top: stepsList.value.scrollHeight, behavior: 'smooth' })
 }
 
-function typeStep(stepIdx) {
+function typeStep(stepIdx: number): void {
   const step = displaySteps.value[stepIdx]
   if (!step) { processQueue(); return }
 
@@ -97,9 +106,9 @@ function typeStep(stepIdx) {
   let i = step.displayed.length
   step.typing = true
 
-  const speed = full.length > 60 ? 10 : 18 
+  const speed = full.length > 60 ? 10 : 18
 
-  const tick = () => {
+  const tick = (): void => {
     const s = displaySteps.value[stepIdx]
     if (!s) return
     if (i < full.length) {
@@ -117,19 +126,19 @@ function typeStep(stepIdx) {
   setTimeout(tick, speed)
 }
 
-function processQueue() {
+function processQueue(): void {
   if (typingQueue.value.length === 0) {
     isTypingActive = false
     return
   }
   isTypingActive = true
-  const stepIdx = typingQueue.value.shift()
+  const stepIdx = typingQueue.value.shift()!
   setTimeout(() => typeStep(stepIdx), 300)
 }
 
 watch(
   () => store.agentSteps.length,
-  (newLen) => {
+  (newLen: number) => {
     if (newLen === 0) {
       displaySteps.value = []
       typingQueue.value = []
@@ -144,7 +153,7 @@ watch(
     }
     knownCount = newLen
     if (!isTypingActive) processQueue()
-  }
+  },
 )
 </script>
 

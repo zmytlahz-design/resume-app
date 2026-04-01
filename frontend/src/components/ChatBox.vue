@@ -91,61 +91,61 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
 import { marked } from 'marked'
 import { useResumeStore } from '../stores/resume'
 import { chat } from '../api/index'
 import { ChatDotRound, ChatLineRound, User, Promotion } from '@element-plus/icons-vue'
 
-const props = defineProps({
-  jobTitle: { type: String, default: '' },
-  jobDescription: { type: String, default: '' },
-})
+const props = defineProps<{
+  jobTitle: string
+  jobDescription: string
+}>()
 
 const store = useResumeStore()
-const chatBody = ref(null)
-const inputText = ref('')
-const isReplying = ref(false)
-const isInputFocus = ref(false)
+const chatBody = ref<HTMLElement | null>(null)
+const inputText = ref<string>('')
+const isReplying = ref<boolean>(false)
+const isInputFocus = ref<boolean>(false)
 const messages = computed(() => store.chatMessages)
 
 const canChat = computed(() => store.hasReport && !!store.sessionId)
 const canSend = computed(() => canChat.value && inputText.value.trim() && !isReplying.value)
 
-const quickQuestions = [
-  "如何优化项目经历描述？",
-  "我的技能栈是否匹配？",
-  "怎么体现我的领导力？"
+const quickQuestions: string[] = [
+  '如何优化项目经历描述？',
+  '我的技能栈是否匹配？',
+  '怎么体现我的领导力？',
 ]
 
-function renderMd(text) {
-  return marked.parse(text || '')
+function renderMd(text: string): string {
+  return marked.parse(text || '') as string
 }
 
-function formatTime(ts) {
+function formatTime(ts?: number): string {
   if (!ts) return ''
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-async function scrollToBottom() {
+async function scrollToBottom(): Promise<void> {
   await nextTick()
   if (chatBody.value) {
     chatBody.value.scrollTop = chatBody.value.scrollHeight
   }
 }
 
-function useQuickQuestion(q) {
+function useQuickQuestion(q: string): void {
   if (!canChat.value) return
   inputText.value = q
   sendMessage()
 }
 
-watch(() => store.hasReport, (v) => {
+watch(() => store.hasReport, (v: boolean) => {
   if (v) scrollToBottom()
 })
 
-async function sendMessage() {
+async function sendMessage(): Promise<void> {
   const text = inputText.value.trim()
   if (!text || !canSend.value) return
 
@@ -159,13 +159,13 @@ async function sendMessage() {
 
   let accumulated = ''
   try {
-    await chat(store.sessionId, text, props.jobTitle, props.jobDescription, (chunk) => {
+    await chat(store.sessionId, text, props.jobTitle, props.jobDescription, (chunk: string) => {
       accumulated += chunk
       store.chatMessages[idx].content = accumulated
       scrollToBottom()
     })
   } catch (e) {
-    store.chatMessages[idx].content = `❌ ${e.message || '请求失败，请重试'}`
+    store.chatMessages[idx].content = `❌ ${(e as Error).message || '请求失败，请重试'}`
   } finally {
     isReplying.value = false
     store.persistChat()

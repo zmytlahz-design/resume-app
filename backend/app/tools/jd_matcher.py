@@ -1,6 +1,11 @@
-"""Tool 2: compute JD match score from resume data."""
+"""Tool 2: compute JD match score from resume data.
+
+流程：
+1) 从 JD 提取结构化关键词（LLM）；
+2) 计算简历与 JD 的匹配分（embedding 余弦相似度）；
+3) 输出统一结构供 Agent 与后续工具消费。
+"""
 import numpy as np
-import re
 from openai import OpenAI
 from app.core.config import get_settings
 
@@ -19,37 +24,10 @@ def _sanitize_text(text: str) -> str:
     return text.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
 
 
-def _fallback_extract_jd_keywords(job_title: str, job_description: str) -> dict:
-    """
-    LLM 调用失败时的本地兜底提取。
-    仅提取基础字段，保证后续流程继续。
-    """
-    text = f"{job_title}\n{job_description}".lower()
-    known_skills = [
-        "python", "java", "javascript", "typescript", "vue", "react", "node",
-        "fastapi", "django", "flask", "mysql", "postgresql", "redis", "docker",
-        "kubernetes", "git", "linux", "pandas", "numpy", "sql", "html", "css",
-    ]
-    required = [s for s in known_skills if s in text]
-
-    # 粗略识别年限
-    years = 0
-    m = re.search(r"(\d+)\s*年", text)
-    if m:
-        years = int(m.group(1))
-
-    return {
-        "required_skills": required,
-        "preferred_skills": [],
-        "responsibilities": [],
-        "years_of_experience": years,
-        "education_requirement": "",
-    }
-
-
 def get_embedding(text: str) -> list[float]:
     """
     调用 embedding 接口，将文本转换为向量。
+    注意：该步骤依赖提供方支持 embedding 模型。
     """
     response = client.embeddings.create(
         model=settings.llm_embedding_model,
@@ -71,7 +49,8 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
 
 def extract_jd_keywords(job_title: str, job_description: str) -> dict:
     """
-    用 LLM 从 JD 中提取关键要求
+    用 LLM 从 JD 中提取关键要求。
+    输出字段会被后续 stack_checker 直接使用，因此结构必须稳定。
     """
     job_title = _sanitize_text(job_title)
     job_description = _sanitize_text(job_description)
@@ -88,69 +67,54 @@ def extract_jd_keywords(job_title: str, job_description: str) -> dict:
 
 只返回JSON。"""
 
-    try:
-        response = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-        )
-        import json
-        return json.loads(response.choices[0].message.content)
-    except UnicodeEncodeError:
-        return _fallback_extract_jd_keywords(job_title, job_description)
-    except Exception:
-        return _fallback_extract_jd_keywords(job_title, job_description)
+    response = client.chat.completions.create(
+        model=settings.llm_model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.1,
+    )
+    import json
+    return json.loads(response.choices[0].message.content)
 
 
 def run_jd_matcher(resume_data: dict, job_title: str, job_description: str) -> dict:
     """
-    Tool 2 对外统一入口
-    计算简历与JD的匹配程度
+    Tool 2 对外统一入口：计算简历与 JD 的匹配程度。
+
+    返回结构约定（严格模式）：
+    {
+      "match_score": float,
+      "jd_analysis": {...},
+      "match_level": "高/中/低",
+    }
+
+    说明：
+    - 本函数不做降级兜底；任一步失败会抛异常，由上层直接返回失败。
     """
-    try:
-        job_title = _sanitize_text(job_title)
-        job_description = _sanitize_text(job_description)
+    job_title = _sanitize_text(job_title)
+    job_description = _sanitize_text(job_description)
 
-        # 1. 提取JD关键词
-        jd_keywords = extract_jd_keywords(job_title, job_description)
+    # 1. 提取JD关键词
+    jd_keywords = extract_jd_keywords(job_title, job_description)
 
-        # 2. 用向量相似度计算整体匹配度
-        # 把简历技能和工作经历拼成文本
-        resume_skills = [str(s) for s in resume_data.get('skills', [])]
-        resume_text = f"""
-        技能：{', '.join(resume_skills)}
-        经历：{' '.join([
-            exp.get('position', '') + ' ' + ' '.join(exp.get('responsibilities', []))
-            for exp in resume_data.get('work_experience', [])
-        ])}
-        """
-        resume_text = _sanitize_text(resume_text)
+    # 2. 计算整体匹配度：embedding 余弦相似度
+    resume_skills = [str(s) for s in resume_data.get('skills', [])]
+    resume_text = f"""
+    技能：{', '.join(resume_skills)}
+    经历：{' '.join([
+        exp.get('position', '') + ' ' + ' '.join(exp.get('responsibilities', []))
+        for exp in resume_data.get('work_experience', [])
+    ])}
+    """
+    resume_text = _sanitize_text(resume_text)
 
-        try:
-            # 尝试用向量相似度（需要 embedding API 支持）
-            resume_vec = get_embedding(resume_text[:2000])  # 限制长度
-            jd_vec = get_embedding(job_description[:2000])
-            similarity_score = cosine_similarity(resume_vec, jd_vec)
-            match_percent = round(similarity_score * 100, 1)
-        except Exception:
-            # 如果 embedding 接口不可用，用关键词匹配兜底
-            resume_skills_lower = [s.lower() for s in resume_skills]
-            required = jd_keywords.get('required_skills', [])
-            matched = sum(1 for skill in required if any(skill.lower() in rs for rs in resume_skills_lower))
-            match_percent = round((matched / max(len(required), 1)) * 100, 1)
+    resume_vec = get_embedding(resume_text[:2000])  # 限制长度
+    jd_vec = get_embedding(job_description[:2000])
+    similarity_score = cosine_similarity(resume_vec, jd_vec)
+    match_percent = round(similarity_score * 100, 1)
 
-        return {
-            "match_score": match_percent,
-            "jd_analysis": jd_keywords,
-            "match_level": "高" if match_percent >= 70 else "中" if match_percent >= 40 else "低",
-        }
-    except Exception as e:
-        # 兜底：任何异常都返回可继续的默认结构，避免中断整个Agent流程。
-        fallback_jd = _fallback_extract_jd_keywords(_sanitize_text(job_title), _sanitize_text(job_description))
-        return {
-            "match_score": 0.0,
-            "jd_analysis": fallback_jd,
-            "match_level": "低",
-            "warning": f"jd_matcher_fallback: {type(e).__name__}",
-        }
+    return {
+        "match_score": match_percent,
+        "jd_analysis": jd_keywords,
+        "match_level": "高" if match_percent >= 70 else "中" if match_percent >= 40 else "低",
+    }

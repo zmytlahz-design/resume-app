@@ -115,33 +115,27 @@ async def analyze_resume(
     async def event_stream():
         """
         生成 SSE 事件流。
+        router 只负责：发 session_id、透传 agent 产出的 SSE 块、run 结束后做持久化。
+        事件类型（thinking/observation/report_chunk 等）的定义与格式化全部在 agent 内部。
         """
         t0 = time.time()
         # 先发送 session_id 给前端保存
         yield f"event: session_id\ndata: {session_id}\n\n"
         print(f"[SSE {time.time()-t0:.3f}s] session_id", flush=True)
-        
-        # 缓存简历内容供追问使用
-        full_report = []
-        
+
         async for chunk in agent.run(file_bytes, job_title, job_description):
             yield chunk
-            # 调试日志：记录每条事件的交付时间
-            tag = chunk[:50].replace('\n', '|')
+            tag = chunk[:50].replace('\n', '|').encode('ascii', errors='replace').decode('ascii')
             print(f"[SSE {time.time()-t0:.3f}s] {tag}", flush=True)
-            # 提取报告内容加入对话历史
-            if chunk.startswith("event: report_chunk"):
-                content = chunk.split("data: ", 1)[-1].strip()
-                full_report.append(content)
-        
-        # 把完整报告加入对话历史，供后续追问参考
-        if full_report:
+
+        # run() 结束后直接从 agent 属性取报告文本，无需解析 SSE 字符串
+        if agent.report_text:
             session_append(session_id, {
                 "role": "assistant",
-                "content": "## 简历诊断报告\n" + "".join(full_report)
+                "content": "## 简历诊断报告\n" + agent.report_text,
             })
-        
-        # 缓存简历解析结果
+
+        # 缓存工具链运行结果
         cache_set(session_id, agent.tool_results)
 
     return StreamingResponse(
@@ -239,73 +233,10 @@ async def chat(request: ChatRequest):
                 "content": "".join(full_reply)
             })
             yield _sse_event("chat_end", "done")
-        except UnicodeEncodeError:
-            # 降级兜底：编码异常时也要给用户可读回复，避免前端报错。
-            fallback_reply = (
-                "抱歉，聊天服务遇到了编码兼容问题，我已切换到降级模式。\n\n"
-                "你可以继续追问，我建议按下面方式提问会更稳定：\n"
-                "1. 一次只问一个具体问题（例如：帮我改写这段项目经历）。\n"
-                "2. 少用特殊符号和超长段落。\n"
-                "3. 如果需要，我可以先给你一个可直接粘贴到简历里的改写模板。"
-            )
-            session_append(session_id, {
-                "role": "assistant",
-                "content": fallback_reply
-            })
-            yield _sse_event("chat_chunk", fallback_reply)
-            yield _sse_event("chat_end", "done")
         except Exception as e:
-            # 主流式失败后，继续用更短上下文多次重试，尽量避免直接报错。
-            err_text = str(e).lower()
-            print(f"[chat_stream] primary stream failed: {type(e).__name__}: {str(e)}")
-
-            retry_plans = [(8000, 8), (5000, 6), (3000, 4)]
-            stream_ok = False
-            last_error_text = err_text
-
-            for max_chars, max_items in retry_plans:
-                try:
-                    full_reply.clear()
-                    retry_messages = _compact_messages(
-                        safe_messages,
-                        max_chars=max_chars,
-                        max_items=max_items,
-                    )
-                    async for evt in _stream_once(retry_messages):
-                        yield evt
-
-                    session_append(session_id, {
-                        "role": "assistant",
-                        "content": "".join(full_reply)
-                    })
-                    yield _sse_event("chat_end", "done")
-                    stream_ok = True
-                    break
-                except Exception as e_retry:
-                    last_error_text = f"{last_error_text} | {str(e_retry).lower()}"
-                    print(
-                        "[chat_stream] retry stream failed: "
-                        f"{type(e_retry).__name__}: {str(e_retry)}"
-                    )
-
-            if not stream_ok:
-                # 关键：不能抛异常，否则前端会看到 ERR_INCOMPLETE_CHUNKED_ENCODING
-                if "insufficient balance" in last_error_text or "402" in last_error_text:
-                    fallback_reply = "当前 AI 服务余额不足，暂时无法进行流式对话，请更换可用 API Key 后重试。"
-                elif "rate" in last_error_text or "429" in last_error_text:
-                    fallback_reply = "当前请求频率较高，流式通道被限流。请等待 5-10 秒后重试。"
-                elif "timeout" in last_error_text or "timed out" in last_error_text:
-                    fallback_reply = "模型响应超时，我已保留会话上下文。请重发一次同样问题。"
-                elif "context" in last_error_text or "token" in last_error_text or "length" in last_error_text:
-                    fallback_reply = "当前会话上下文过长导致流式失败。我已自动压缩上下文，请再发一次同样的问题。"
-                else:
-                    fallback_reply = "流式通道本次请求失败。请重试一次；若连续失败，我可以切换到稳定的非流式回复模式。"
-                session_append(session_id, {
-                    "role": "assistant",
-                    "content": fallback_reply
-                })
-                yield _sse_event("chat_chunk", fallback_reply)
-                yield _sse_event("chat_end", "done")
+            # 严格失败模式：不做重试与降级提示，直接返回失败并结束。
+            yield _sse_event("chat_chunk", f"聊天失败：{str(e)}")
+            yield _sse_event("chat_end", "done")
     
     return StreamingResponse(
         chat_stream(),
@@ -317,4 +248,4 @@ async def chat(request: ChatRequest):
 @router.get("/health")
 async def health_check():
     """健康检查接口，部署后用来验证服务是否正常"""
-    return {"status": "ok", "message": "简历诊断Agent服务运行中-v4-friendly-fallback"}
+    return {"status": "ok", "message": "简历诊断Agent服务运行中-v5-strict-fail"}

@@ -27,7 +27,7 @@
         @dragover.prevent="isDragover = true"
         @dragleave="isDragover = false"
         @drop.prevent="onDrop"
-        @click="fileInput.click()"
+        @click="fileInput?.click()"
       >
         <input ref="fileInput" type="file" accept=".pdf" class="hidden-input" @change="onFileChange" />
         
@@ -108,32 +108,34 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useResumeStore } from '../stores/resume'
 import { analyzeResume } from '../api/index'
 import { DocumentChecked, RefreshRight, Document, UploadFilled, Close, WarningFilled, Suitcase, ArrowRight } from '@element-plus/icons-vue'
 
-const emit = defineEmits(['updateJob'])
+const emit = defineEmits<{
+  (e: 'updateJob', payload: { title: string; desc: string }): void
+}>()
 
 const store = useResumeStore()
-const fileInput = ref(null)
-const file = ref(null)
-const jobTitle = ref('')
-const jobDescription = ref('')
-const isDragover = ref(false)
-const errorMsg = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
+const file = ref<File | null>(null)
+const jobTitle = ref<string>('')
+const jobDescription = ref<string>('')
+const isDragover = ref<boolean>(false)
+const errorMsg = ref<string>('')
 
 const isAnalyzing = computed(() => store.isAnalyzing)
 const canSubmit = computed(() => file.value && jobTitle.value.trim() && jobDescription.value.trim())
 const hasStarted = computed(() => store.isAnalyzing || store.hasReport || store.agentSteps.length > 0)
 
-function onFileChange(e) {
-  const f = e.target.files?.[0]
+function onFileChange(e: Event): void {
+  const f = (e.target as HTMLInputElement).files?.[0]
   if (f) selectFile(f)
 }
 
-function onDrop(e) {
+function onDrop(e: DragEvent): void {
   isDragover.value = false
   const f = e.dataTransfer?.files[0]
   if (f?.type === 'application/pdf') {
@@ -143,18 +145,18 @@ function onDrop(e) {
   }
 }
 
-function selectFile(f) {
+function selectFile(f: File): void {
   errorMsg.value = ''
   file.value = f
 }
 
-function clearFile() {
+function clearFile(): void {
   file.value = null
   errorMsg.value = ''
   if (fileInput.value) fileInput.value.value = ''
 }
 
-function onReset() {
+function onReset(): void {
   clearFile()
   jobTitle.value = ''
   jobDescription.value = ''
@@ -162,7 +164,7 @@ function onReset() {
   emit('updateJob', { title: '', desc: '' })
 }
 
-async function onSubmit() {
+async function onSubmit(): Promise<void> {
   if (!canSubmit.value) return
   errorMsg.value = ''
   store.reset()
@@ -170,7 +172,7 @@ async function onSubmit() {
   emit('updateJob', { title: jobTitle.value, desc: jobDescription.value })
 
   try {
-    await analyzeResume(file.value, jobTitle.value, jobDescription.value, (type, data) => {
+    await analyzeResume(file.value!, jobTitle.value, jobDescription.value, (type, data) => {
       switch (type) {
         case 'session_id':
           store.setSessionIdFromServer(data)
@@ -180,7 +182,7 @@ async function onSubmit() {
           break
         case 'observation':
           try {
-            const parsed = JSON.parse(data)
+            const parsed = JSON.parse(data) as { result: string; tool: string | null }
             store.addAgentStep('observation', parsed.result, parsed.tool)
           } catch {
             store.addAgentStep('observation', data)
@@ -198,7 +200,7 @@ async function onSubmit() {
       }
     })
   } catch (e) {
-    errorMsg.value = e.message || '分析失败，请重试'
+    errorMsg.value = (e as Error).message || '分析失败，请重试'
   } finally {
     store.isAnalyzing = false
     store.reportDone = true

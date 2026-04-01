@@ -1,7 +1,11 @@
-"""Tool 1: parse resume PDF into structured fields."""
+"""Tool 1: parse resume PDF into structured fields.
+
+该工具分两层：
+1) PDF 文本提取（pdfplumber）；
+2) LLM 结构化解析（严格模式，失败直接抛错）。
+"""
 import pdfplumber
 import io
-import re
 from openai import OpenAI
 from app.core.config import get_settings
 
@@ -20,6 +24,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     :param file_bytes: 上传文件的字节内容
     :return: 提取的纯文本
     """
+    # 按页提取，合并为单一长文本供后续结构化。
     text_parts = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
@@ -27,7 +32,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
             text = page.extract_text()
             if text:
                 text_parts.append(text)
-            # 提取表格（技能表、经历表常见）
+            # 同时提取表格，避免技能/项目信息只存在表格里而丢失。
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
@@ -56,6 +61,7 @@ def parse_resume_structure(raw_text: str) -> dict:
 {raw_text}
 """
 
+    # 要求模型直接返回 JSON，降低后处理复杂度与解析失败概率。
     response = client.chat.completions.create(
         model=settings.llm_model,
         messages=[{"role": "user", "content": prompt}],
@@ -67,76 +73,25 @@ def parse_resume_structure(raw_text: str) -> dict:
     return json.loads(response.choices[0].message.content)
 
 
-def fallback_parse_resume_structure(raw_text: str) -> dict:
-    """
-    当 LLM 结构化阶段失败时的本地兜底解析，避免整个流程中断。
-    该实现偏保守：尽量提取可用信息，其他字段保留空列表。
-    """
-    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
-    joined = "\n".join(lines)
-
-    # 简单抽取姓名：取首行中文/英文名称样式
-    name = ""
-    if lines:
-        candidate = lines[0]
-        if 1 < len(candidate) <= 30:
-            name = candidate
-
-    # 技能关键词粗提取
-    skill_keywords = [
-        "python", "java", "javascript", "typescript", "vue", "react", "node",
-        "fastapi", "django", "flask", "mysql", "postgresql", "redis", "docker",
-        "kubernetes", "git", "linux", "tensorflow", "pytorch", "pandas", "numpy",
-    ]
-    lower_text = joined.lower()
-    skills = []
-    for kw in skill_keywords:
-        if kw in lower_text:
-            skills.append(kw)
-
-    # 粗略分段：按常见标题分块
-    section_titles = ["教育", "教育经历", "工作经历", "实习经历", "项目", "项目经历", "技能", "个人简介"]
-    sections = {title: [] for title in section_titles}
-    current = None
-    for line in lines:
-        hit = next((t for t in section_titles if t in line), None)
-        if hit:
-            current = hit
-            continue
-        if current:
-            sections[current].append(line)
-
-    return {
-        "name": name,
-        "education": [{"text": " ".join(sections.get("教育", []) or sections.get("教育经历", []))}] if (sections.get("教育") or sections.get("教育经历")) else [],
-        "work_experience": [{"company": "", "position": "", "responsibilities": sections.get("工作经历", []) or sections.get("实习经历", [])}] if (sections.get("工作经历") or sections.get("实习经历")) else [],
-        "projects": [{"name": "", "description": " ".join(sections.get("项目", []) or sections.get("项目经历", []))}] if (sections.get("项目") or sections.get("项目经历")) else [],
-        "skills": skills,
-        "summary": " ".join(sections.get("个人简介", [])),
-    }
-
-
 def run_pdf_parser(file_bytes: bytes) -> dict:
     """
-    Tool 1 对外统一入口
-    Agent 调用这个函数，而不是直接调用内部函数
+    Tool 1 对外统一入口（Agent 仅依赖这个入口）。
+
+    约定返回：
+    - 成功：结构化 dict，并附带 raw_text；
+    - 失败：返回 {"error": "..."}，由上层 Agent 决定是否终止流程。
     """
     raw_text = extract_text_from_pdf(file_bytes)
     if not raw_text.strip():
+        # 常见于扫描版 PDF（图像文本），当前链路未启用 OCR 时会命中这里。
         return {"error": "PDF 内容为空或无法解析，请检查PDF是否为扫描版"}
 
-    # 清理潜在的坏字符，减少编码异常概率
+    # 清理潜在坏字符，减少下游 LLM/日志/传输中的编码异常概率。
     raw_text = raw_text.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
 
-    try:
-        structured = parse_resume_structure(raw_text)
-    except UnicodeEncodeError:
-        structured = fallback_parse_resume_structure(raw_text)
-        structured["parse_warning"] = "LLM结构化阶段发生编码异常，已使用本地兜底解析"
-    except Exception:
-        # 其他异常也兜底，保证流程可继续
-        structured = fallback_parse_resume_structure(raw_text)
-        structured["parse_warning"] = "LLM结构化阶段失败，已使用本地兜底解析"
+    # 严格模式：结构化失败直接抛异常，由上层 Agent 终止并展示失败信息。
+    structured = parse_resume_structure(raw_text)
 
-    structured["raw_text"] = raw_text  # 保留原始文本，其他工具可能用到
+    # 保留原始文本：便于调试、追问、以及后续可能新增的分析工具复用。
+    structured["raw_text"] = raw_text
     return structured
