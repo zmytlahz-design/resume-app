@@ -41,17 +41,12 @@ import AgentProcess from './components/AgentProcess.vue'
 import ReportDisplay from './components/ReportDisplay.vue'
 import ChatBox from './components/ChatBox.vue'
 
-interface SavedJob { title: string; desc: string }
-
-const savedJob = JSON.parse(localStorage.getItem('resume_job') ?? 'null') as SavedJob | null
-const jobTitle = ref<string>(savedJob?.title ?? '')
-const jobDescription = ref<string>(savedJob?.desc ?? '')
+const jobTitle = ref<string>('')
+const jobDescription = ref<string>('')
 
 function onUpdateJob({ title, desc }: { title: string; desc: string }): void {
   jobTitle.value = title
   jobDescription.value = desc
-  if (title || desc) localStorage.setItem('resume_job', JSON.stringify({ title, desc }))
-  else localStorage.removeItem('resume_job')
 }
 </script>
 

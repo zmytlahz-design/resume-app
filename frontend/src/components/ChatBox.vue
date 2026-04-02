@@ -120,6 +120,7 @@ const quickQuestions: string[] = [
 ]
 
 function renderMd(text: string): string {
+  // 聊天同样采用“累计后整体 parse”策略，确保流式阶段 Markdown 语法尽量稳定。
   return marked.parse(text || '') as string
 }
 
@@ -157,6 +158,8 @@ async function sendMessage(): Promise<void> {
   store.addChatMessage('assistant', '')
   const idx = store.chatMessages.length - 1
 
+  // 每收到一个 chunk 先累加，再整段替换到最后一条 assistant 消息里。
+  // 这样即使 chunk 在 Markdown 语法中间断开，也能在下一次累加后恢复正确渲染。
   let accumulated = ''
   try {
     await chat(store.sessionId, text, props.jobTitle, props.jobDescription, (chunk: string) => {

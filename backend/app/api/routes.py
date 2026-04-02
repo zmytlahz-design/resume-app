@@ -6,7 +6,16 @@ from fastapi import APIRouter, File, UploadFile, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.agents.resume_agent import ResumeAgent
-from app.core.redis_client import cache_set, session_append, session_get, session_set
+from app.core.db_ops import (
+    cache_set,
+    report_set,
+    session_append,
+    session_delete,
+    session_get,
+    session_get_full,
+    session_init,
+    session_set,
+)
 
 router = APIRouter(prefix="/api", tags=["resume"])
 
@@ -94,21 +103,6 @@ async def analyze_resume(
 
     # 生成 session_id，用于后续追问
     session_id = str(uuid.uuid4())
-    
-    # 初始化对话历史（写入 Redis，TTL 2h）
-    session_set(session_id, [
-        {
-            "role": "system",
-            "content": "\n".join([
-                f"你是一位专业的简历顾问，用户正在应聘「{job_title}」职位。",
-                "你的职责范围：简历优化、经历描述改写、职位匹配分析、求职技巧、面试准备、职业规划。",
-                "规则：",
-                "1. 只回答与简历、求职、职业发展相关的问题，给出具体、可操作的建议。",
-                "2. 如果用户问的与以上范围完全无关（如推荐电影、写诗、天气、股票等），礼貌拒绝并引导回到简历话题，回复控制在一句话内。",
-                "3. 用户用简短的话（如\"怎么改\"\"这段不好\"）指代前面讨论的简历内容时，视为相关问题正常回答。",
-            ])
-        }
-    ])
 
     agent = ResumeAgent()
 
@@ -119,9 +113,25 @@ async def analyze_resume(
         事件类型（thinking/observation/report_chunk 等）的定义与格式化全部在 agent 内部。
         """
         t0 = time.time()
-        # 先发送 session_id 给前端保存
+        # 先发送 session_id 给前端，保证响应立即开始
         yield f"event: session_id\ndata: {session_id}\n\n"
         print(f"[SSE {time.time()-t0:.3f}s] session_id", flush=True)
+
+        # DB 初始化在 SSE 流内部执行，session_id 已先发出，避免冷连接延迟阻塞首次响应
+        await session_init(session_id, job_title, job_description)
+        await session_set(session_id, [
+            {
+                "role": "system",
+                "content": "\n".join([
+                    f"你是一位专业的简历顾问，用户正在应聘「{job_title}」职位。",
+                    "你的职责范围：简历优化、经历描述改写、职位匹配分析、求职技巧、面试准备、职业规划。",
+                    "规则：",
+                    "1. 只回答与简历、求职、职业发展相关的问题，给出具体、可操作的建议。",
+                    "2. 如果用户问的与以上范围完全无关（如推荐电影、写诗、天气、股票等），礼貌拒绝并引导回到简历话题，回复控制在一句话内。",
+                    "3. 用户用简短的话（如\"怎么改\"\"这段不好\"）指代前面讨论的简历内容时，视为相关问题正常回答。",
+                ])
+            }
+        ])
 
         async for chunk in agent.run(file_bytes, job_title, job_description):
             yield chunk
@@ -130,13 +140,14 @@ async def analyze_resume(
 
         # run() 结束后直接从 agent 属性取报告文本，无需解析 SSE 字符串
         if agent.report_text:
-            session_append(session_id, {
+            await session_append(session_id, {
                 "role": "assistant",
                 "content": "## 简历诊断报告\n" + agent.report_text,
             })
+            await report_set(session_id, agent.report_text)
 
         # 缓存工具链运行结果
-        cache_set(session_id, agent.tool_results)
+        await cache_set(session_id, agent.tool_results)
 
     return StreamingResponse(
         event_stream(),
@@ -172,7 +183,7 @@ async def chat(request: ChatRequest):
     """
     session_id = request.session_id
     
-    if session_get(session_id) is None:
+    if await session_get(session_id) is None:
         raise HTTPException(status_code=404, detail="会话不存在，请先上传简历")
 
     user_message = _sanitize_text(request.message)
@@ -188,13 +199,13 @@ async def chat(request: ChatRequest):
         max_retries=2,
     )
 
-    session_append(session_id, {"role": "user", "content": user_message})
+    await session_append(session_id, {"role": "user", "content": user_message})
 
     async def chat_stream():
         full_reply = []
         safe_messages = [
             {"role": m.get("role", "user"), "content": _sanitize_text(m.get("content", ""))}
-            for m in (session_get(session_id) or [])
+            for m in (await session_get(session_id) or [])
         ]
 
         async def _stream_once(stream_messages: list[dict]):
@@ -228,7 +239,7 @@ async def chat(request: ChatRequest):
                 yield evt
 
             # 把AI回复加入历史，保持上下文
-            session_append(session_id, {
+            await session_append(session_id, {
                 "role": "assistant",
                 "content": "".join(full_reply)
             })
@@ -243,6 +254,29 @@ async def chat(request: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+@router.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    """
+    恢复接口：前端刷新后通过 session_id 拉取已有数据。
+    返回 messages、tool_results 和 report_text。
+    """
+    data = await session_get_full(session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="会话不存在或已过期")
+    return data
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """
+    重置接口：删除指定会话及其所有关联数据（messages、tool_results）。
+    """
+    deleted = await session_delete(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="会话不存在或已过期")
+    return {"ok": True}
 
 
 @router.get("/health")

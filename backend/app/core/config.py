@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
     redis_db: int = Field(default=0, alias="REDIS_DB")
     redis_password: str = Field(default="", alias="REDIS_PASSWORD")
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/resume_app",
+        alias="DATABASE_URL",
+    )
 
     class Config:
         env_file = ".env"

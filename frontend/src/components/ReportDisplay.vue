@@ -26,6 +26,7 @@
     </div>
 
     <div v-else class="report-body custom-scrollbar" ref="reportBody">
+      <!-- 流式 Markdown 渲染：每次 report（累计文本）变化后，重新 parse 整段并渲染。 -->
       <div class="markdown-content" v-html="renderedReport"></div>
       <div v-if="isAnalyzing && !reportDone" class="typing-indicator">
         <span></span><span></span><span></span>
@@ -50,6 +51,7 @@ const reportDone = computed(() => store.reportDone)
 
 const renderedReport = computed<string>(() => {
   if (!report.value) return ''
+  // 这里用“完整累计文本”做 parse，而不是对单个 chunk parse，避免代码块/列表在半包时渲染错乱。
   return marked.parse(report.value) as string
 })
 

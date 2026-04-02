@@ -3,11 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
+from app.core.database import create_all
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用启动时执行（可以在这里初始化数据库连接等）"""
+    """应用启动时建表（幂等）并初始化数据库连接。"""
+    await create_all()
     print("Resume Agent service started")
     yield
     print("Resume Agent service stopped")

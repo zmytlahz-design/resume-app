@@ -7,7 +7,6 @@
           <span>上传简历</span>
         </div>
         <el-button
-          v-if="hasStarted"
           class="reset-btn"
           size="small"
           text
@@ -128,7 +127,6 @@ const errorMsg = ref<string>('')
 
 const isAnalyzing = computed(() => store.isAnalyzing)
 const canSubmit = computed(() => file.value && jobTitle.value.trim() && jobDescription.value.trim())
-const hasStarted = computed(() => store.isAnalyzing || store.hasReport || store.agentSteps.length > 0)
 
 function onFileChange(e: Event): void {
   const f = (e.target as HTMLInputElement).files?.[0]
