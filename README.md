@@ -1,19 +1,19 @@
 # AI 简历诊断助手
 
-> 基于 ReAct Agent 架构的智能简历分析系统，支持 PDF 解析、职位匹配评估与多轮追问对话，全程流式输出。
+> 基于 ReAct Agent 架构的智能简历分析系统：PDF 解析、职位匹配、流式诊断报告与多轮追问（SSE）。
 
-![应用截图](docs/screenshot.png)
+仓库：<https://github.com/zmytlahz-design/resume-app>
 
 ---
 
 ## ✨ 功能特性
 
-- **PDF 简历解析** — 自动提取结构化文本信息
-- **ReAct Agent 分析** — 逐步推理（思考→工具调用→观察），过程实时可见
-- **岗位匹配评估** — 对比 JD 自动评分，输出技能匹配度与短板分析
-- **流式诊断报告** — Markdown 格式，逐字流式渲染
-- **多轮追问对话** — 基于简历上下文，仅回答求职相关问题
-- **刷新不丢状态** — 全部分析结果持久化到 localStorage
+- **PDF 简历解析** — 自动提取结构化文本
+- **ReAct Agent** — 思考 → 工具调用 → 观察，过程实时展示
+- **岗位匹配评估** — 对比 JD 输出匹配度与短板分析
+- **流式诊断报告** — Markdown，逐段 SSE 推送
+- **多轮追问** — 基于会话上下文，仅回答求职相关范围
+- **会话持久化** — 会话、对话、工具结果存 **PostgreSQL**；**重置** 时同步删除后端会话数据
 
 ---
 
@@ -21,30 +21,28 @@
 
 | 层级 | 技术 |
 |------|------|
-| 前端框架 | Vue 3 + Vite |
-| 前端状态 | Pinia（持久化到 localStorage）|
-| 前端运行 | Vite Dev Server（`/api` 代理到后端）|
-| 后端框架 | Python FastAPI |
-| 流式协议 | SSE（Server-Sent Events）|
-| AI Agent | ReAct 架构（自定义工具链）|
-| 大语言模型 | GLM-4-Flash（智谱 AI）|
-| 会话存储 | Redis（2h TTL 自动过期）|
-| 运行方式 | 本地开发（前端 Vite + 后端 FastAPI） |
+| 前端 | **Vue 3** + **TypeScript** + **Vite** |
+| 状态 | **Pinia**（运行时内存；不做 localStorage 持久化） |
+| 后端 | **Python 3.10+** + **FastAPI** |
+| 数据库 | **PostgreSQL 16+**，**SQLAlchemy 2**（async）+ **asyncpg** |
+| ORM / 迁移依赖 | **Alembic**（依赖已声明，可按需启用迁移） |
+| 流式协议 | **SSE**（Server-Sent Events） |
+| AI | **智谱 GLM**（OpenAI 兼容 API，默认 `glm-4-flash`） |
+| Agent | ReAct + 自定义工具链（PDF / JD 匹配 / 技术栈 / STAR 等） |
+| 容器（本地） | **Docker**：PostgreSQL（`启动.bat` 一键拉起） |
 
 ---
 
-## 🏗 系统架构
+## 🏗 系统架构（简图）
 
 ```
-浏览器
-  │
-  ├─ Vue3 + Vite Dev Server :5173
-  │        │
-  │        └─ /api/*（Vite Proxy）
-  │
-  └──────────────────────────────→ FastAPI :8011
-                                   │
-                        ReAct Agent + Redis Session/Cache
+浏览器 (Vue 3, :5173)
+    │  fetch /api/* 与 SSE
+    ▼
+FastAPI (:8011)
+    ├── routes：/api/analyze、/api/chat、/api/sessions/{id} …
+    ├── ReAct ResumeAgent
+    └── PostgreSQL：sessions / messages / tool_results
 ```
 
 ---
@@ -53,45 +51,37 @@
 
 ### 前置条件
 
-- Python 3.10+
-- Node.js 18+
+- **Python 3.10+**（推荐 3.11）、**Node.js 18+**
+- **Docker Desktop**（用于本地 PostgreSQL；也可自备已创建的库）
+- 智谱 API Key：<https://open.bigmodel.cn/>
 
-### 1. 克隆项目
+### Windows 一键启动（推荐）
+
+1. 配置 `backend/.env`（可复制 `.env.example` → `backend/.env`，填写 `ZHIPU_API_KEY` 与 `DATABASE_URL`）。
+2. 双击项目根目录 **`启动.bat`**：检查环境 → 启动 PostgreSQL 容器 → 后台启动 FastAPI 与 Vite → **等待端口就绪后**再打开浏览器。
+
+日志目录：`logs/backend.log`、`logs/backend.err.log`、`logs/frontend.log`。
+
+### 手动启动（跨平台）
+
+**1. PostgreSQL**
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/resume-app.git
-cd resume-app
+docker run -d --name resume-postgres -p 5432:5432 \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=resume_app \
+  postgres:16-alpine
 ```
 
-### 2. 配置 API Key（后端）
+**2. 环境变量**
 
 ```bash
-# 复制示例文件
 cp .env.example backend/.env
-
-# 编辑 backend/.env，填入你的智谱 AI API Key
-# 申请地址：https://open.bigmodel.cn/
+# 编辑 backend/.env：ZHIPU_API_KEY、DATABASE_URL（与上一步数据库一致）
 ```
 
-`backend/.env` 内容示例：
-```
-ZHIPU_API_KEY=your_api_key_here
-ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-ZHIPU_MODEL=glm-4-flash
-ZHIPU_EMBEDDING_MODEL=embedding-3
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-REDIS_DB=0
-REDIS_PASSWORD=
-```
-
-### 3. 启动 Redis
-
-```bash
-docker run -d --name resume-redis -p 6379:6379 redis:7-alpine
-```
-
-### 4. 启动后端（FastAPI）
+**3. 后端**
 
 ```bash
 cd backend
@@ -99,7 +89,9 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
 ```
 
-### 5. 启动前端（Vite）
+应用启动时会 **`create_all()`** 自动建表（开发环境）。
+
+**4. 前端**
 
 ```bash
 cd frontend
@@ -107,64 +99,56 @@ npm install
 npm run dev
 ```
 
-启动后访问：**http://localhost:5173**
-
-### 6. 停止服务
-
-```bash
-# 前端/后端终端使用 Ctrl + C 停止
-docker stop resume-redis
-```
+浏览器访问：**http://localhost:5173**（开发时代理 `/api` 到 `8011`，见 `frontend/vite.config.js`）。
 
 ---
 
-## 📁 项目结构
+## 📁 项目结构（节选）
 
 ```
 resume-app/
-├── backend/                  # FastAPI 后端
+├── 启动.bat                 # Windows：Docker PG + 后端 + 前端 + 就绪后打开浏览器
+├── scripts/
+│   └── wait-for-dev.ps1     # 轮询后端 /api/health 与前端 :5173 后再打开浏览器
+├── backend/
 │   ├── app/
-│   │   ├── agents/
-│   │   │   └── resume_agent.py   # ReAct Agent 核心逻辑
-│   │   ├── api/
-│   │   │   └── routes.py         # SSE 流式接口
+│   │   ├── agents/resume_agent.py
+│   │   ├── api/routes.py           # SSE、会话 REST
 │   │   ├── core/
-│   │   │   ├── config.py         # Pydantic 配置管理
-│   │   │   └── redis_client.py   # Redis 会话/缓存封装（TTL）
+│   │   │   ├── config.py
+│   │   │   ├── database.py         # SQLAlchemy async、ORM 模型
+│   │   │   ├── db_ops.py           # 会话 / 工具结果持久化
+│   │   │   └── redis_client.py     # 遗留模块，主路由未使用
 │   │   └── tools/
-│   │       ├── pdf_parser.py     # PDF 解析工具
-│   │       ├── jd_matcher.py     # JD 匹配工具
-│   │       └── stack_checker.py  # 技术栈检查工具
-│   ├── Dockerfile
 │   └── requirements.txt
-├── frontend/                 # Vue 3 前端
-│   ├── src/
-│   │   ├── api/index.js          # SSE 流式请求封装
-│   │   ├── stores/resume.js      # Pinia 状态管理
-│   │   └── components/
-│   │       ├── ResumeUpload.vue  # 上传 & 触发分析
-│   │       ├── AgentProcess.vue  # Agent 思考步骤展示
-│   │       ├── ReportDisplay.vue # 诊断报告渲染
-│   │       └── ChatBox.vue       # 追问对话框
-│   ├── Dockerfile
-│   └── vite.config.js
+└── frontend/
+    ├── src/
+    │   ├── api/index.ts            # analyzeResume、chat、fetchSession、deleteSession
+    │   ├── stores/resume.ts
+    │   └── components/             # ResumeUpload、AgentProcess、ReportDisplay、ChatBox …
+    └── vite.config.js
 ```
 
 ---
 
-## 🔑 核心设计亮点
+## 🔑 API 摘要
 
-### 1. ReAct Agent 架构
-Agent 在每一轮迭代中依次执行**思考（Thought）→ 工具调用（Action）→ 观察结果（Observation）**，逻辑清晰可追溯，前端实时展示每一步。
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/analyze` | 上传 PDF + JD，SSE 流式分析 |
+| POST | `/api/chat` | 追问，SSE |
+| GET | `/api/sessions/{session_id}` | 拉取会话（消息、工具结果、报告文本） |
+| DELETE | `/api/sessions/{session_id}` | 删除会话（前端重置时调用） |
+| GET | `/api/health` | 健康检查 |
 
-### 2. SSE 流式输出
-使用 HTTP SSE 协议（而非 WebSocket）实现服务端到客户端的单向数据推送，无需握手升级，天然兼容 HTTP/2，适合"服务端持续推送、客户端只读"的场景。
+---
 
-### 3. Redis 会话隔离
-每个用户分配唯一 `session_id`（UUID），对话历史存入 Redis（`resume:session:{id}`），PDF 解析结果单独缓存（`resume:cache:{id}`），2 小时自动过期。
+## 🔑 设计要点
 
-### 4. Vue 3 响应式持久化
-分析结果（Agent 步骤、诊断报告、聊天记录）写入 `localStorage`，刷新页面无需重新分析，解决 SPA 状态丢失问题。
+1. **ReAct** — Thought → Action → Observation，前端分步展示。  
+2. **SSE** — 单向流式，易穿透代理，适合「服务端推、客户端只读」。  
+3. **PostgreSQL** — `session_id`（UUID）关联消息与工具结果；会话行含过期时间等字段。  
+4. **启动顺序** — `wait-for-dev.ps1` 避免浏览器早于服务就绪出现连接被拒绝。
 
 ---
 
